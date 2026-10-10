@@ -1,0 +1,12 @@
+{
+  "name": "Roadtrip English",
+  "short_name": "Roadtrip",
+  "description": "Anglais de voyage : cartes, phrases, lecture du jour et situations à l'oral.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f1e7",
+  "theme_color": "#1f6f8b",
+  "lang": "fr",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
