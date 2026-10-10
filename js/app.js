@@ -35,12 +35,12 @@ function load() {
 }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* stockage indisponible */ } }
 function dayStats(d = TODAY()) {
-  if (!S.days[d]) S.days[d] = { cards: 0, newCards: 0, phrases: 0, reading: 0, sit: 0, speak: 0 };
+  if (!S.days[d]) S.days[d] = { cards: 0, newCards: 0, phrases: 0, reading: 0, sit: 0, speak: 0, gram: 0 };
   return S.days[d];
 }
 function activityScore(d) {
   const x = S.days[d]; if (!x) return 0;
-  return (x.cards || 0) + (x.phrases || 0) * 2 + (x.reading || 0) * 10 + (x.sit || 0) * 8 + (x.speak || 0);
+  return (x.cards || 0) + (x.gram || 0) * 2 + (x.phrases || 0) * 2 + (x.reading || 0) * 10 + (x.sit || 0) * 8 + (x.speak || 0);
 }
 function streak() {
   let d = TODAY(), n = 0;
@@ -277,12 +277,13 @@ function countDueToday() { return buildQueue("all").length; }
 
 /* ============================ Navigation ============================ */
 let currentTab = "home";
+const TABS = { home: (o) => renderHome(o), cards: (o) => renderCards(o), translate: (o) => renderTranslateHome(o), read: (o) => renderRead(o), speak: (o) => renderSpeak(o) };
 function go(tab, opts) {
   stopSpeak();
   currentTab = tab;
   $$(".tab").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
   $$(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + tab));
-  ({ home: renderHome, cards: renderCards, translate: renderTranslateHome, read: renderRead, speak: renderSpeak })[tab](opts);
+  TABS[tab](opts);
   window.scrollTo({ top: 0 });
   updateStreak();
 }
@@ -308,6 +309,7 @@ function renderHome() {
   const phrOk = ALL_PHRASES.filter(p => S.phr[p.id] && S.phr[p.id].lastOk).length;
   const readDone = Object.keys(S.read).length;
   const tip = TIPS[TODAY() % TIPS.length];
+  const gi = window.RT && RT.grammarInfo ? RT.grammarInfo() : null;
   const hour = new Date().getHours();
   const hello = hour < 5 ? "Still awake" : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   // Calendrier des 5 dernières semaines
@@ -334,6 +336,8 @@ function renderHome() {
           <div class="go">›</div></div>`).join("")}
       </div>
     </div>
+    ${gi && gi.next ? `<div class="panel goal" style="padding:14px 18px" data-go="grammar">
+      <div class="check">📐</div><div class="grow"><div class="label">Bonus : fiche de grammaire</div><div class="meta">${esc(gi.next.icon + " " + gi.next.title)}</div></div><div class="go">›</div></div>` : ""}
     <div class="panel">
       <h3>Ta progression</h3>
       <div class="stats">
@@ -341,12 +345,14 @@ function renderHome() {
         <div class="stat"><div class="n">${solid}</div><div class="l">mots bien ancrés</div></div>
         <div class="stat"><div class="n">${phrOk}</div><div class="l">phrases réussies / ${ALL_PHRASES.length}</div></div>
         <div class="stat"><div class="n">${readDone}</div><div class="l">épisodes lus / ${READINGS.length}</div></div>
+        <div class="stat"><div class="n">${gi ? gi.passed : 0}</div><div class="l">fiches de grammaire / ${gi ? gi.total : 0}</div></div>
+        <div class="stat"><div class="n">${Object.values(S.sit).reduce((a, b) => a + b, 0)}</div><div class="l">situations jouées</div></div>
       </div>
       <div class="small muted" style="margin-top:12px">Les 5 dernières semaines</div>
       <div class="heat">${heat}</div>
     </div>
     <div class="tip-box"><b>💡 Conseil du jour — ${esc(tip[0])}</b>${esc(tip[1])}</div>`;
-  $$(".goal", v).forEach(el => el.addEventListener("click", () => go(el.dataset.go)));
+  $$(".goal", v).forEach(el => el.addEventListener("click", () => go(el.dataset.go, el.dataset.go === "grammar" && gi && gi.next ? { fiche: gi.next.id } : undefined)));
 }
 
 /* ============================ Cartes ============================ */
@@ -965,7 +971,7 @@ function openSettings() {
       <label class="btn ghost small" style="cursor:pointer">📂 Restaurer<input type="file" id="sRestore" accept="application/json" hidden></label>
     </div>
     <div style="margin-top:22px"><button class="btn ghost small" id="sReset" style="color:var(--bad)">Tout réinitialiser</button></div>
-    <p class="small muted" style="margin-top:20px">Roadtrip English · ${WORDS.length} mots · ${ALL_PHRASES.length} phrases · ${READINGS.length} lectures · ${SITUATIONS.length} situations. Tout fonctionne sans compte et hors-ligne.</p>
+    <p class="small muted" style="margin-top:20px">Roadtrip English · ${WORDS.length} mots · ${ALL_PHRASES.length} phrases · ${READINGS.length} lectures · ${SITUATIONS.length} situations · ${(window.GRAMMAR || []).length} fiches de grammaire. Tout fonctionne sans compte et hors-ligne.</p>
   </div></div>`;
   $("#mbg").addEventListener("click", e => { if (e.target.id === "mbg") closeModal(); });
   $("#mClose").addEventListener("click", closeModal);
@@ -1018,6 +1024,7 @@ function onboarding() {
     <p>Cette appli t'entraîne chaque jour pour parler anglais en voyage :</p>
     <div class="phrase-row"><span style="font-size:22px">🃏</span><div class="grow"><b>${WORDS.length} cartes de vocabulaire</b><div class="fr">Méthode Anki : chaque mot revient au bon moment.</div></div></div>
     <div class="phrase-row"><span style="font-size:22px">✍️</span><div class="grow"><b>${ALL_PHRASES.length} phrases à traduire</b><div class="fr">À l'écrit, en assemblant les mots, ou au micro.</div></div></div>
+    <div class="phrase-row"><span style="font-size:22px">📐</span><div class="grow"><b>${(window.GRAMMAR || []).length} fiches de grammaire</b><div class="fr">Des explications courtes en français et des exercices corrigés.</div></div></div>
     <div class="phrase-row"><span style="font-size:22px">📖</span><div class="grow"><b>Une lecture par jour</b><div class="fr">L'histoire de Tom, un Français timide qui part en voyage.</div></div></div>
     <div class="phrase-row"><span style="font-size:22px">🗣️</span><div class="grow"><b>${SITUATIONS.length} situations à jouer à l'oral</b><div class="fr">Aéroport, hôtel, resto, pharmacie… pour oser parler.</div></div></div>
     <div class="field" style="margin-top:16px"><label>Comment tu t'appelles ?</label><input type="text" id="obName" placeholder="Ton prénom" style="width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--card)"></div>
@@ -1032,6 +1039,14 @@ function onboarding() {
   });
 }
 
+/* ============================ API pour les autres modules ============================ */
+window.RT = {
+  $, $$, esc, shuffle, speak, norm, toast, dayStats, save, TODAY, LESSONS, pickPraise, updateStreak,
+  state: () => S,
+  goLesson: (id) => { go("translate"); startTranslate(id); },
+  registerTab: (name, fn) => { TABS[name] = fn; }
+};
+
 /* ============================ Démarrage ============================ */
 load(); applyTheme();
 $$(".tab").forEach(b => b.addEventListener("click", () => go(b.dataset.tab)));
@@ -1040,8 +1055,7 @@ document.addEventListener("click", e => { if (!e.target.closest(".gl")) $$(".gl.
 // Si l'appli reste ouverte après minuit, on rafraîchit l'accueil
 let lastDay = TODAY();
 document.addEventListener("visibilitychange", () => { if (!document.hidden && TODAY() !== lastDay) { lastDay = TODAY(); go(currentTab); } });
-go("home");
-if (!S.onboarded) onboarding();
+document.addEventListener("DOMContentLoaded", () => { go("home"); if (!S.onboarded) onboarding(); });
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
   window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
 }
