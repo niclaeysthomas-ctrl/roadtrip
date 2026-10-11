@@ -6,7 +6,7 @@ const RT = window.RT;
 const { $, $$, esc, shuffle, speak, norm, toast, dayStats, save, state, TODAY } = RT;
 
 const md = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
-const FICHES = (window.GRAMMAR || []).map(g => ({
+const FICHES_RAW = (window.GRAMMAR || []).map(g => ({
   ...g,
   exercises: g.ex.trim().split("\n").map(line => {
     const p = line.split("|");
@@ -15,12 +15,17 @@ const FICHES = (window.GRAMMAR || []).map(g => ({
     return { type: "o", fr: p[1], en: p[2] };
   })
 }));
+// Tri stable par niveau (A1, A1+, A2, B1, B2)
+const FICHES = FICHES_RAW.map((f, i) => ({ ...f, lvl: RT.lvlIdx(f.level), ord: i })).sort((a, b) => a.lvl - b.lvl || a.ord - b.ord);
 const IRR = (window.IRREGULARS || "").trim().split("\n").map(l => { const [base, past, pp, fr] = l.split("|"); return { base, past, pp, fr }; });
 
 function gstate() { const S = state(); S.gram = S.gram || {}; S.irr = S.irr || {}; return S; }
 function best(id) { const g = gstate().gram[id]; return g ? g.best : null; }
 function passed(id) { const b = best(id); return b !== null && b >= 0.8; }
-function nextFiche() { return FICHES.find(f => !passed(f.id)) || null; }
+function nextFiche() {
+  const u = RT.userLvl();
+  return FICHES.find(f => !passed(f.id) && f.lvl >= u) || FICHES.find(f => !passed(f.id)) || null;
+}
 
 let view = { tab: "fiches" };
 function render(opts) {
@@ -41,14 +46,17 @@ function render(opts) {
   const z = $("#gramZone");
   z.innerHTML = `
     ${nx ? `<button class="lesson featured" style="width:100%;margin-bottom:12px" data-f="${nx.id}"><div class="lv">⚡ FICHE CONSEILLÉE</div><div class="nm">${nx.icon} ${esc(nx.title)}</div>
-      <div class="small" style="opacity:.8">Les fiches sont dans l'ordre : chacune s'appuie sur les précédentes.</div></button>`
+      <div class="small" style="opacity:.8">Niveau ${nx.level} · les fiches sont dans l'ordre : chacune s'appuie sur les précédentes.</div></button>`
       : `<div class="lesson-tip">🏆 Toutes les fiches sont réussies ! Refais-les de temps en temps pour ne pas oublier.</div>`}
-    <div class="panel" style="padding:6px 14px">
-      ${FICHES.map((f, i) => { const b = best(f.id); return `<div class="goal ${passed(f.id) ? "done" : ""}" data-f="${f.id}">
-        <div class="check">${passed(f.id) ? "✓" : i + 1}</div>
+    ${[0, 1, 2, 3].map(L => { const fs = FICHES.filter(f => f.lvl === L); if (!fs.length) return "";
+      const u = RT.userLvl(); const tag = L === u || L === u + 1 ? '<span class="rec-tag">pour toi</span>' : L < u ? '<span class="small muted">révision</span>' : "";
+      return `<h3 class="lvl-head">${RT.LEVELS[L]} — ${RT.LEVEL_NAMES[RT.LEVELS[L]]} ${tag}</h3>
+      <div class="panel" style="padding:6px 14px">
+      ${fs.map(f => { const b = best(f.id); const n = FICHES.indexOf(f) + 1; return `<div class="goal ${passed(f.id) ? "done" : ""}" data-f="${f.id}">
+        <div class="check">${passed(f.id) ? "✓" : n}</div>
         <div class="grow"><div class="label">${f.icon} ${esc(f.title)}</div><div class="meta">${f.level}${b !== null ? " · meilleur score " + Math.round(b * 100) + " %" : " · pas encore faite"}</div></div>
         <div class="go">›</div></div>`; }).join("")}
-    </div>`;
+      </div>`; }).join("")}`;
   $$("[data-f]", z).forEach(el => el.addEventListener("click", () => openFiche(el.dataset.f)));
 }
 

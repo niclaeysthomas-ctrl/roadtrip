@@ -32,6 +32,9 @@ function load() {
   S.days = S.days || {};       // dayNum -> stats
   S.start = S.start || TODAY();
   S.onboarded = !!S.onboarded;
+  S.level = S.level || null;     // niveau CECRL estimé : "A1"… "C1"
+  S.readStart = S.readStart || 0;
+  S.tests = S.tests || [];
 }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* stockage indisponible */ } }
 function dayStats(d = TODAY()) {
@@ -159,9 +162,22 @@ function diffHTML(user, answer) {
   return '<div class="diff">' + out.join(" ") + "</div>";
 }
 
+/* ============================ Niveaux ============================ */
+const LEVELS = ["A1", "A2", "B1", "B2", "C1"];
+const LEVEL_NAMES = { A1: "Débutant", A2: "Élémentaire", B1: "Intermédiaire", B2: "Intermédiaire avancé", C1: "Avancé" };
+function lvlIdx(l) { const i = LEVELS.indexOf(String(l || "A1").replace("+", "")); return i < 0 ? 0 : i; }
+function userLvl() { return Math.min(lvlIdx(S.level || "A1"), 3); } // le contenu va jusqu'au B2
+// Plus le score est bas, plus le contenu est prioritaire : niveau de l'élève, puis le niveau au-dessus, puis les révisions en dessous.
+function lvlRank(i) { const u = userLvl(); return i >= u ? i - u : (u - i) + 0.5; }
+const LESSON_CEFR = { 1: 0, 2: 1, 3: 1, 4: 2, 5: 3 };
+const LESSON_LABEL = { 1: "A1", 2: "A2", 3: "A2+", 4: "B1", 5: "B2" };
+
 /* ============================ Données ============================ */
 const DECK_ORDER = ["basics", "questions", "numbers", "food", "transport", "hotel", "airport", "verbs", "adjectives", "time", "shopping", "city", "health", "people", "weather", "leisure", "connectors", "body"];
-const DECKS = (window.VOCAB || []).slice().sort((a, b) => DECK_ORDER.indexOf(a.id) - DECK_ORDER.indexOf(b.id));
+const RAW_DECKS = window.VOCAB || [];
+const deckOrd = (d) => { const i = DECK_ORDER.indexOf(d.id); return i >= 0 ? i : 100 + RAW_DECKS.indexOf(d); };
+RAW_DECKS.forEach(d => { d.level = d.level || "A1"; d.lvl = lvlIdx(d.level); });
+const DECKS = RAW_DECKS.slice().sort((a, b) => (a.lvl - b.lvl) || (deckOrd(a) - deckOrd(b)));
 const WORDS = []; const WORD = {};
 DECKS.forEach(d => {
   d.list = [];
@@ -184,8 +200,8 @@ const PHRASE = {}; LESSONS.forEach(l => l.list.forEach(p => { PHRASE[p.id] = p; 
 const ALL_PHRASES = LESSONS.flatMap(l => l.list);
 
 const READINGS = window.READINGS || [];
-const SITUATIONS = (window.SITUATIONS || []).map(s => ({
-  ...s, steps: s.lines.trim().split("\n").map(line => {
+const SITUATIONS = (window.SITUATIONS || []).map((s, i) => ({
+  ...s, level: s.level || (i < 9 ? "A1" : "A2"), steps: s.lines.trim().split("\n").map(line => {
     const [them, task, ans] = line.split("|");
     return { them: them.trim(), task: task.trim(), answers: ans.split("//").map(x => x.trim()) };
   })
@@ -241,9 +257,23 @@ function wordLevel(w) {
   if (ivl < 0) return 0; if (ivl < 7) return 1; if (ivl < 21) return 2; return 3;
 }
 function dirs() { return S.settings.direction === "both" ? ["r", "p"] : [S.settings.direction]; }
+// Ordre des nouveaux mots : par priorité de niveau, et à l'intérieur d'un niveau on alterne les thèmes.
+function mixByLevel(words) {
+  const groups = {};
+  words.forEach(w => { const d = DECK[w.deck]; const r = lvlRank(d.lvl); (groups[r] = groups[r] || {}); (groups[r][d.id] = groups[r][d.id] || []).push(w); });
+  const out = [];
+  Object.keys(groups).map(Number).sort((a, b) => a - b).forEach(r => {
+    const lists = Object.values(groups[r]).map(l => l.filter(w => !S.cards[cardId(w.id, "r")] || !S.cards[cardId(w.id, "p")]).concat(l.filter(w => S.cards[cardId(w.id, "r")] && S.cards[cardId(w.id, "p")])));
+    let k = 0, added = true;
+    while (added) { added = false; lists.forEach(l => { if (k < l.length) { out.push(l[k]); added = true; } }); k++; }
+  });
+  return out;
+}
 function buildQueue(deckId) {
   const today = TODAY();
-  const words = deckId === "all" ? WORDS : (DECK[deckId] ? DECK[deckId].list : WORDS);
+  const base = deckId === "all" ? WORDS : (DECK[deckId] ? DECK[deckId].list : WORDS);
+  // Nouveaux mots : d'abord ceux du niveau de l'élève (tri stable)
+  const words = deckId === "all" ? mixByLevel(base) : base;
   const ds = dayStats();
   const due = [], newR = [], newP = [];
   const useR = dirs().includes("r"), useP = dirs().includes("p"), both = useR && useP;
@@ -274,6 +304,16 @@ function buildQueue(deckId) {
   return q;
 }
 function countDueToday() { return buildQueue("all").length; }
+// « Je connais déjà » : le mot sort des nouveautés et revient dans un mois pour vérifier.
+function markKnown(wid) {
+  const today = TODAY();
+  ["r", "p"].forEach(dir => {
+    const id = cardId(wid, dir);
+    if (!S.cards[id]) S.cards[id] = { ivl: 30, ease: 2.6, reps: 1, lapses: 0, due: today + 25 + Math.floor(Math.random() * 15), first: today, last: today, known: true };
+  });
+  const ds = dayStats(); ds.known = (ds.known || 0) + 1; ds.cards++;
+  save();
+}
 
 /* ============================ Navigation ============================ */
 let currentTab = "home";
@@ -325,7 +365,10 @@ function renderHome() {
       <h2>${hello}${S.settings.name ? ", " + esc(S.settings.name) : ""} ! 👋</h2>
       <p>${doneN === 4 ? "Objectif du jour atteint. Great job! 🎉" : "Ta mission du jour : " + (4 - doneN) + " étape" + (4 - doneN > 1 ? "s" : "") + " pour avancer vers ton prochain voyage."}</p>
       <span class="day-badge">Jour ${dayN} · 🔥 ${streak()} jour${streak() > 1 ? "s" : ""} d'affilée</span>
+      ${S.level ? `<span class="day-badge">🎯 Niveau ${S.level}</span>` : ""}
     </div>
+    ${!S.level ? `<div class="panel test-cta"><div class="row"><div style="font-size:30px">🎯</div><div class="grow"><b>Fais le test de niveau</b><div class="small muted">5 à 8 minutes. L'appli s'adapte ensuite à ton vrai niveau (cartes, phrases, lectures, grammaire).</div></div></div>
+      <button class="btn block" id="homeTest" style="margin-top:12px">Commencer le test</button></div>` : ""}
     <div class="panel">
       <div class="row" style="margin-bottom:8px"><h3 class="grow" style="margin:0">Aujourd'hui</h3><span class="muted small">${doneN}/4</span></div>
       <div class="progress"><div style="width:${doneN * 25}%"></div></div>
@@ -353,6 +396,7 @@ function renderHome() {
     </div>
     <div class="tip-box"><b>💡 Conseil du jour — ${esc(tip[0])}</b>${esc(tip[1])}</div>`;
   $$(".goal", v).forEach(el => el.addEventListener("click", () => go(el.dataset.go, el.dataset.go === "grammar" && gi && gi.next ? { fiche: gi.next.id } : undefined)));
+  const ht = $("#homeTest"); if (ht) ht.addEventListener("click", () => go("test"));
 }
 
 /* ============================ Cartes ============================ */
@@ -360,11 +404,12 @@ let cardDeck = "all", cardQueue = [], cardFlipped = false, cardShowList = false,
 function renderCards() {
   const v = $("#view-cards");
   cardQueue = buildQueue(cardDeck); cardFlipped = false; sessionCount = 0;
-  const opts = `<option value="all">Tous les thèmes (${WORDS.length} mots)</option>` +
-    DECKS.map(d => `<option value="${d.id}" ${d.id === cardDeck ? "selected" : ""}>${d.icon} ${esc(d.name)} — ${d.list.filter(w => wordLevel(w) > 0).length}/${d.list.length}</option>`).join("");
+  const opts = `<option value="all">Tous les thèmes (${WORDS.length} mots) — priorité au niveau ${LEVELS[userLvl()]}</option>` +
+    LEVELS.slice(0, 4).map(L => { const ds = DECKS.filter(d => d.level === L); if (!ds.length) return "";
+      return `<optgroup label="${L} — ${LEVEL_NAMES[L]}">` + ds.map(d => `<option value="${d.id}">${d.icon} ${esc(d.name)} — ${d.list.filter(w => wordLevel(w) > 0).length}/${d.list.length}</option>`).join("") + "</optgroup>"; }).join("");
   v.innerHTML = `
     <h1 class="view-title">Cartes</h1>
-    <p class="view-sub">Comme Anki : sois honnête avec toi-même, l'appli revient sur les mots au bon moment.</p>
+    <p class="view-sub">Comme Anki : sois honnête avec toi-même, l'appli revient sur les mots au bon moment. Un nouveau mot trop facile ? « Je connais déjà » le met de côté.</p>
     <div class="deck-bar"><select id="deckSel" aria-label="Thème">${opts}</select>
       <button class="btn ghost small" id="listBtn">${cardShowList ? "🃏 Réviser" : "📋 Liste"}</button></div>
     <div id="cardZone"></div>`;
@@ -417,7 +462,7 @@ function showCard() {
   z.innerHTML = `
     <div class="counts"><span class="new">${c.n} nouveaux</span><span class="lrn">${c.l} en cours</span><span class="rev">${c.r} à revoir</span></div>
     <div class="flash" id="flash">
-      <div class="cat">${deck.icon} ${esc(deck.name)}</div>
+      <div class="cat">${deck.icon} ${esc(deck.name)} · ${deck.level}</div>
       <div class="dir">${dir === "r" ? "EN → FR" : "FR → EN"}</div>
       <div class="front">
         ${!st ? '<span class="level-tag">Nouveau mot</span>' : ""}
@@ -433,7 +478,9 @@ function showCard() {
     </div>
     <div id="cardActions" style="margin-top:14px">
       <button class="btn block" id="flipBtn">Afficher la réponse <span class="small" style="opacity:.7">(espace)</span></button>
+      ${!st ? `<button class="btn ghost block" id="knownBtn" style="margin-top:8px">✓ Je connais déjà ce mot <span class="small muted">(K)</span></button>` : ""}
     </div>`;
+  const kb = $("#knownBtn"); if (kb) kb.addEventListener("click", () => skipKnown());
   if (dir === "r") { $("#sayFront").addEventListener("click", e => { e.stopPropagation(); speak(w.en); }); if (S.settings.autoplay) speak(w.en); }
   $("#flipBtn").addEventListener("click", flipCard);
   $("#flash").addEventListener("click", e => { if (!cardFlipped && !e.target.closest("button")) flipCard(); });
@@ -450,6 +497,14 @@ function flipCard() {
     <p class="small muted center" style="margin-top:8px">Raccourcis clavier : 1 · 2 · 3 · 4</p>`;
   $$(".grade").forEach(b => b.addEventListener("click", () => answerCard(+b.dataset.g)));
 }
+function skipKnown() {
+  if (!cardQueue.length) return;
+  const wid = cardQueue[0].split("|")[0];
+  if (S.cards[cardQueue[0]]) return;
+  markKnown(wid);
+  cardQueue = cardQueue.filter(id => id.split("|")[0] !== wid);
+  sessionCount++; updateStreak(); showCard();
+}
 function answerCard(g) {
   if (!cardFlipped) return;
   const id = cardQueue.shift();
@@ -461,6 +516,7 @@ document.addEventListener("keydown", e => {
   if (currentTab !== "cards" || cardShowList || e.target.matches("input, textarea, select")) return;
   if (e.code === "Space" || e.key === "Enter") { e.preventDefault(); if (!cardFlipped) flipCard(); else answerCard(2); }
   if (cardFlipped && ["1", "2", "3", "4"].includes(e.key)) answerCard(+e.key - 1);
+  if (!cardFlipped && (e.key === "k" || e.key === "K")) skipKnown();
 });
 
 /* ============================ Traduction ============================ */
@@ -472,18 +528,22 @@ function renderTranslateHome() {
     <h1 class="view-title">Traduire</h1>
     <p class="view-sub">Du français vers l'anglais : c'est l'exercice qui débloque l'oral. Écris, assemble les mots, ou dis la phrase au micro.</p>
     <div class="lesson-grid">
-      <button class="lesson featured" data-l="mix"><div class="lv">⚡ RECOMMANDÉ</div><div class="nm">Mélange du jour — 10 phrases</div>
-        <div class="small" style="opacity:.8">Tes erreurs d'abord, puis de nouvelles phrases, de la plus simple à la plus dure.</div></button>
-      ${LESSONS.map(l => { const m = l.list.filter(phraseMastered).length; return `<button class="lesson" data-l="${l.id}">
-        <div class="lv">NIVEAU ${l.level}</div><div class="nm">${esc(l.name)}</div>
+      <button class="lesson featured" data-l="mix"><div class="lv">⚡ RECOMMANDÉ · NIVEAU ${LEVELS[userLvl()]}</div><div class="nm">Mélange du jour — 10 phrases</div>
+        <div class="small" style="opacity:.8">Tes erreurs d'abord, puis de nouvelles phrases de ton niveau et du niveau au-dessus.</div></button>
+    </div>
+    ${[5, 4, 3, 2, 1].filter(lv => LESSONS.some(l => l.level === lv)).sort((a, b) => lvlRank(LESSON_CEFR[a]) - lvlRank(LESSON_CEFR[b]) || a - b).map(lv => {
+      const ls = LESSONS.filter(l => l.level === lv); const rec = lvlRank(LESSON_CEFR[lv]) <= 1;
+      return `<h3 class="lvl-head">${LESSON_LABEL[lv]} ${rec ? '<span class="rec-tag">pour toi</span>' : '<span class="small muted">révision / plus tard</span>'}</h3>
+      <div class="lesson-grid">${ls.map(l => { const m = l.list.filter(phraseMastered).length; return `<button class="lesson" data-l="${l.id}">
+        <div class="lv">${LESSON_LABEL[l.level]}</div><div class="nm">${esc(l.name)}</div>
         <div class="progress"><div style="width:${Math.round(m / l.list.length * 100)}%"></div></div>
-        <div class="small muted" style="margin-top:4px">${m}/${l.list.length}</div></button>`; }).join("")}
-    </div>`;
+        <div class="small muted" style="margin-top:4px">${m}/${l.list.length}</div></button>`; }).join("")}</div>`; }).join("")}`;
   $$(".lesson", v).forEach(b => b.addEventListener("click", () => startTranslate(b.dataset.l)));
 }
 function mixPhrases() {
   const wrong = shuffle(ALL_PHRASES.filter(p => S.phr[p.id] && !S.phr[p.id].lastOk));
-  const fresh = LESSONS.slice().sort((a, b) => a.level - b.level).flatMap(l => l.list.filter(p => !S.phr[p.id]));
+  const fresh = LESSONS.filter(l => lvlRank(LESSON_CEFR[l.level]) <= 1.5).sort((a, b) => lvlRank(LESSON_CEFR[a.level]) - lvlRank(LESSON_CEFR[b.level]) || a.level - b.level)
+    .flatMap(l => shuffle(l.list.filter(p => !S.phr[p.id])));
   const old = ALL_PHRASES.filter(p => S.phr[p.id] && S.phr[p.id].lastOk).sort((a, b) => (S.phr[a.id].last || 0) - (S.phr[b.id].last || 0));
   const pick = wrong.slice(0, 4);
   for (const p of fresh) { if (pick.length >= 8) break; pick.push(p); }
@@ -636,10 +696,6 @@ function endTranslate() {
 /* ============================ Lecture du jour ============================ */
 function doneReadings() { return Object.keys(S.read).map(Number); }
 function readToday() { return Object.values(S.read).some(r => r.day === TODAY()); }
-function unlockedCount() {
-  const n = doneReadings().length;
-  return Math.min(READINGS.length, readToday() ? Math.max(n, 1) : n + 1);
-}
 function todayReadingIndex() {
   const done = new Set(doneReadings());
   if (done.size >= READINGS.length) {
@@ -647,8 +703,13 @@ function todayReadingIndex() {
     return t ? +t[0] : TODAY() % READINGS.length;
   }
   if (readToday()) { const t = Object.entries(S.read).filter(([, r]) => r.day === TODAY()).map(([k]) => +k); return Math.max(...t); }
-  for (let i = 0; i < READINGS.length; i++) if (!done.has(i)) return i;
+  const start = Math.min(S.readStart || 0, READINGS.length - 1);
+  for (let k = 0; k < READINGS.length; k++) { const i = (start + k) % READINGS.length; if (!done.has(i)) return i; }
   return 0;
+}
+function isLocked(i, doneSet) {
+  if (doneSet.has(i) || i < (S.readStart || 0)) return false;
+  return i > todayReadingIndex();
 }
 let readState = { idx: null, showFr: false, showGloss: false, slow: false, playing: false };
 function renderRead(opts) {
@@ -672,7 +733,7 @@ function glossify(sentence, gloss) {
 function splitSentences(par) { return par.match(/[^.!?]+[.!?]+["”’)]*\s*|[^.!?]+$/g) || [par]; }
 function drawReading() {
   const v = $("#view-read"); const idx = readState.idx; const r = READINGS[idx];
-  const unlocked = unlockedCount(); const done = S.read[idx];
+  const done = S.read[idx];
   const doneSet = new Set(doneReadings());
   let sIdx = 0; const sentences = [];
   const textHTML = r.text.split("\n").map(par => "<p>" + splitSentences(par).map(s => { sentences.push(s.trim()); return `<span class="s" data-s="${sIdx++}">${glossify(s, r.glossary)}</span>`; }).join("") + "</p>").join("");
@@ -680,7 +741,7 @@ function drawReading() {
   const allDone = doneSet.size >= READINGS.length;
   v.innerHTML = `
     <h1 class="view-title">Lecture du jour</h1>
-    <p class="view-sub">« Tom's Big Trip » : un épisode par jour (${READINGS.length} au total). Touche les mots soulignés pour la traduction.</p>
+    <p class="view-sub">Un épisode par jour. Saison 1 « Tom's Big Trip » (A1 → A2) · Saison 2 « Two Brothers Down Under » (B1 → B2). Touche les mots soulignés pour la traduction.</p>
     ${readToday() && !allDone && idx === todayReadingIndex() && idx + 1 < READINGS.length ? `<div class="lesson-tip">✅ Lecture du jour faite ! L'épisode ${idx + 2} se débloque demain. Tu peux relire les précédents en attendant.</div>` : ""}
     ${allDone ? `<div class="lesson-tip">🏁 Tu as fini toute l'histoire ! Chaque jour, un épisode revient pour une relecture : essaie de le lire à voix haute, sans la traduction.</div>` : ""}
     <div class="panel">
@@ -697,7 +758,7 @@ function drawReading() {
         <button class="btn ghost small" id="rdAddCards" style="margin-top:12px">Écouter le lexique 🔊</button></div>` : ""}
     </div>
     <div class="panel"><h3>As-tu compris ?</h3>
-      ${r.q.map((q, qi) => `<div class="quiz-q">${qi + 1}. ${esc(q[0])}</div>${q[1].map((o, oi) => `<button class="quiz-opt" data-q="${qi}" data-o="${oi}">${esc(o)}</button>`).join("")}`).join("")}
+      ${r.q.map((q, qi) => `<div class="quiz-q">${qi + 1}. ${esc(q[0])}</div>${quizOrder(idx, qi, q[1].length).map(oi => `<button class="quiz-opt" data-q="${qi}" data-o="${oi}">${esc(q[1][oi])}</button>`).join("")}`).join("")}
       <div id="rdScore"></div>
     </div>
     <div class="panel"><h3>🗣️ À toi de parler</h3>
@@ -706,7 +767,8 @@ function drawReading() {
       ${SR ? `<button class="mic-btn" id="rdMic">🎤</button><div class="heard center" id="rdHeard"></div>` : ""}
     </div>
     <div class="panel"><h3>Tous les épisodes</h3>
-      <div class="ep-list">${READINGS.map((x, i) => { const locked = i >= unlocked && !doneSet.has(i); return `<button class="ep ${doneSet.has(i) ? "done" : ""} ${i === idx ? "current" : ""} ${locked ? "locked" : ""}" data-ep="${i}" ${locked ? "disabled" : ""} title="${esc(x.title)}">${locked ? "🔒" : i + 1}</button>`; }).join("")}</div>
+      ${[[1, "Saison 1 · Tom's Big Trip (A1 → A2)"], [2, "Saison 2 · Two Brothers Down Under (B1 → B2)"]].map(([sn, label]) => `<div class="small muted" style="margin:10px 0 6px;font-weight:700">${label}</div>
+      <div class="ep-list">${READINGS.map((x, i) => [x, i]).filter(([x]) => (x.season || 1) === sn).map(([x, i]) => { const locked = isLocked(i, doneSet); return `<button class="ep ${doneSet.has(i) ? "done" : ""} ${i === idx ? "current" : ""} ${locked ? "locked" : ""}" data-ep="${i}" ${locked ? "disabled" : ""} title="${esc(x.title)}">${locked ? "🔒" : i + 1}</button>`; }).join("")}</div>`).join("")}
       <p class="small muted" style="margin-bottom:0">${doneSet.size}/${READINGS.length} épisodes lus${done ? " · Score de cet épisode : " + done.score + "/3" : ""}</p>
     </div>`;
   $$(".gl", v).forEach(el => el.addEventListener("click", (e) => { e.stopPropagation(); const open = el.classList.contains("open"); $$(".gl.open").forEach(x => x.classList.remove("open")); if (!open) { el.classList.add("open"); speak(el.textContent); } }));
@@ -721,6 +783,11 @@ function drawReading() {
   const mic = $("#rdMic"); if (mic) wireMic(mic, (alts) => { $("#rdHeard").textContent = alts.length ? "« " + alts[0] + " »" : "Je n'ai rien entendu."; if (alts.length) { dayStats().speak++; save(); } });
   // Rétablit les réponses déjà données à ce quiz
   Object.entries(readState.answers).forEach(([q, o]) => markQuiz(+q, o));
+}
+// Ordre des réponses mélangé, mais toujours le même pour un épisode donné
+function quizOrder(ep, qi, n) {
+  const h = (k) => { let x = Math.imul(ep + 1, 73856093) ^ Math.imul(qi + 1, 19349663) ^ Math.imul(k + 1, 83492791); x = Math.imul(x ^ (x >>> 15), 2246822519); x = Math.imul(x ^ (x >>> 13), 3266489917); return (x ^ (x >>> 16)) >>> 0; };
+  return Array.from({ length: n }, (_, k) => k).sort((x, y) => h(x) - h(y));
 }
 function stopReading() { readState.playing = false; stopSpeak(); $$(".s.speaking").forEach(x => x.classList.remove("speaking")); }
 async function toggleReadAloud() {
@@ -781,7 +848,8 @@ function renderSpeak(opts) {
 function renderSitList() {
   const z = $("#speakZone");
   z.innerHTML = `<p class="small muted" style="margin-top:0">Tu joues ton rôle à voix haute. L'autre personne te parle, on te dit en français ce que tu dois répondre. ${SR ? "Le micro vérifie ta phrase." : "Dis ta phrase, puis compare avec la réponse."}</p>
-    <div class="sit-grid">${SITUATIONS.map(s => `<button class="sit" data-s="${s.id}">${S.sit[s.id] ? `<span class="badge">✓ ${S.sit[s.id]}×</span>` : ""}<div class="ic">${s.icon}</div><div class="t">${esc(s.title)}</div><div class="w">avec : ${esc(s.who)}</div></button>`).join("")}</div>`;
+    ${LEVELS.slice(0, 4).filter(L => SITUATIONS.some(s => s.level === L)).sort((a, b) => lvlRank(lvlIdx(a)) - lvlRank(lvlIdx(b))).map(L => `<h3 class="lvl-head">${L} ${lvlRank(lvlIdx(L)) <= 1 ? '<span class="rec-tag">pour toi</span>' : ""}</h3>
+    <div class="sit-grid">${SITUATIONS.filter(s => s.level === L).map(s => `<button class="sit" data-s="${s.id}">${S.sit[s.id] ? `<span class="badge">✓ ${S.sit[s.id]}×</span>` : ""}<div class="ic">${s.icon}</div><div class="t">${esc(s.title)}</div><div class="w">avec : ${esc(s.who)}</div></button>`).join("")}</div>`).join("")}`;
   $$(".sit", z).forEach(b => b.addEventListener("click", () => startSit(b.dataset.s)));
 }
 function startSit(id) {
@@ -876,7 +944,9 @@ let shadow = null;
 function renderShadow() {
   const z = $("#speakZone");
   const seen = ALL_PHRASES.filter(p => S.phr[p.id]);
-  const pool = seen.length >= 10 ? seen : ALL_PHRASES.filter(p => LESSONS.find(l => l.id === p.lesson).level === 1);
+  const near = (p) => lvlRank(LESSON_CEFR[LESSONS.find(l => l.id === p.lesson).level]) <= 1;
+  const seenNear = seen.filter(near);
+  const pool = seenNear.length >= 10 ? seenNear : ALL_PHRASES.filter(near);
   shadow = { items: shuffle(pool).slice(0, 10), i: 0, scores: [] };
   drawShadow();
 }
@@ -952,11 +1022,15 @@ function openSettings() {
     <div class="row"><h2 class="grow" style="margin:0">Réglages</h2><button class="icon-btn" id="mClose" aria-label="Fermer">✕</button></div>
     <div style="height:14px"></div>
     <div class="field"><label>Ton prénom</label><input type="text" id="sName" value="${esc(st.name)}" style="width:100%;padding:11px 12px;border-radius:12px;border:1px solid var(--line);background:var(--card)"></div>
+    <div class="field"><label>Niveau ${S.level ? "(test : " + S.level + ")" : ""}</label>
+      <select id="sLevel">${LEVELS.map(L => `<option value="${L}" ${L === (S.level || "A1") ? "selected" : ""}>${L} — ${LEVEL_NAMES[L]}</option>`).join("")}</select>
+      <button class="btn ghost small" id="sTest" style="margin-top:8px">🎯 ${S.level ? "Refaire" : "Faire"} le test de niveau</button>
+      <div class="small muted" style="margin-top:4px">Change l'ordre des nouveaux mots, les leçons et situations recommandées, la fiche de grammaire conseillée et l'épisode de départ de la lecture.</div></div>
     <div class="field"><label>Accent</label><select id="sAccent"><option value="en-US" ${st.accent === "en-US" ? "selected" : ""}>🇺🇸 Américain</option><option value="en-GB" ${st.accent === "en-GB" ? "selected" : ""}>🇬🇧 Britannique</option></select></div>
-    <div class="field"><label>Voix</label><select id="sVoice">${voiceOpts}</select><button class="btn ghost small" id="sTest" style="margin-top:8px">🔊 Tester la voix</button></div>
+    <div class="field"><label>Voix</label><select id="sVoice">${voiceOpts}</select><button class="btn ghost small" id="sVoiceTest" style="margin-top:8px">🔊 Tester la voix</button></div>
     <div class="field"><label>Vitesse de la voix : <span id="rateV">${st.rate.toFixed(2)}</span></label><input type="range" id="sRate" min="0.5" max="1.2" step="0.05" value="${st.rate}"></div>
     <div class="field"><label>Nouveaux mots par jour</label><select id="sNew">${[5, 10, 15, 20, 30].map(n => `<option ${n === st.newPerDay ? "selected" : ""}>${n}</option>`).join("")}</select>
-      <div class="small muted" style="margin-top:4px">15 par jour = les ${WORDS.length} mots vus en ~${Math.ceil(WORDS.length / 15 / 30)} mois (et chaque mot est travaillé dans les deux sens).</div></div>
+      <div class="small muted" style="margin-top:4px">Les mots déjà connus se mettent de côté en un clic, donc ce rythme concerne surtout les mots vraiment nouveaux. Chaque mot est travaillé dans les deux sens.</div></div>
     <div class="field"><label>Sens des cartes</label><select id="sDir">
       <option value="both" ${st.direction === "both" ? "selected" : ""}>Les deux (recommandé) : comprendre puis dire</option>
       <option value="r" ${st.direction === "r" ? "selected" : ""}>Anglais → Français uniquement</option>
@@ -977,9 +1051,11 @@ function openSettings() {
   $("#mClose").addEventListener("click", closeModal);
   const upd = () => { save(); applyTheme(); if (currentTab === "home") renderHome(); };
   $("#sName").addEventListener("input", e => { st.name = e.target.value.trim(); upd(); });
+  $("#sLevel").addEventListener("change", e => { applyLevel(e.target.value); upd(); toast("Niveau " + e.target.value + " appliqué ✓"); });
+  $("#sTest").addEventListener("click", () => { closeModal(); go("test"); });
   $("#sAccent").addEventListener("change", e => { st.accent = e.target.value; st.voiceURI = ""; upd(); openSettings(); });
   $("#sVoice").addEventListener("change", e => { st.voiceURI = e.target.value; upd(); speak("Hello! Ready for your trip?"); });
-  $("#sTest").addEventListener("click", () => speak("Hello! Can I have a coffee, please?"));
+  $("#sVoiceTest").addEventListener("click", () => speak("Hello! Can I have a coffee, please?"));
   $("#sRate").addEventListener("input", e => { st.rate = +e.target.value; $("#rateV").textContent = st.rate.toFixed(2); upd(); });
   $("#sNew").addEventListener("change", e => { st.newPerDay = +e.target.value; upd(); });
   $("#sDir").addEventListener("change", e => { st.direction = e.target.value; upd(); });
@@ -1016,33 +1092,50 @@ function applyTheme() {
   if (t === "auto") document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme", t);
 }
 
+/* Applique un niveau à toute l'appli */
+function applyLevel(L) {
+  S.level = L; const u = lvlIdx(L);
+  const minNew = [15, 20, 20, 25, 25][u];
+  if (S.settings.newPerDay < minNew) S.settings.newPerDay = minNew;
+  const start = [0, 10, 30, 40, 40][u];
+  // On ne recule jamais le point de départ si l'élève a déjà lu plus loin
+  S.readStart = Math.min(start, READINGS.length - 1);
+  save();
+}
+
 /* Premier lancement */
 function onboarding() {
   $("#modalRoot").innerHTML = `<div class="modal-bg"><div class="modal" role="dialog" aria-label="Bienvenue">
     <div style="font-size:48px">✈️</div>
     <h2>Welcome aboard!</h2>
-    <p>Cette appli t'entraîne chaque jour pour parler anglais en voyage :</p>
-    <div class="phrase-row"><span style="font-size:22px">🃏</span><div class="grow"><b>${WORDS.length} cartes de vocabulaire</b><div class="fr">Méthode Anki : chaque mot revient au bon moment.</div></div></div>
+    <p>Cette appli t'entraîne chaque jour pour parler anglais en voyage, de débutant à B2 :</p>
+    <div class="phrase-row"><span style="font-size:22px">🃏</span><div class="grow"><b>${WORDS.length} cartes de vocabulaire (A1 → B2)</b><div class="fr">Méthode Anki : chaque mot revient au bon moment.</div></div></div>
     <div class="phrase-row"><span style="font-size:22px">✍️</span><div class="grow"><b>${ALL_PHRASES.length} phrases à traduire</b><div class="fr">À l'écrit, en assemblant les mots, ou au micro.</div></div></div>
     <div class="phrase-row"><span style="font-size:22px">📐</span><div class="grow"><b>${(window.GRAMMAR || []).length} fiches de grammaire</b><div class="fr">Des explications courtes en français et des exercices corrigés.</div></div></div>
-    <div class="phrase-row"><span style="font-size:22px">📖</span><div class="grow"><b>Une lecture par jour</b><div class="fr">L'histoire de Tom, un Français timide qui part en voyage.</div></div></div>
+    <div class="phrase-row"><span style="font-size:22px">📖</span><div class="grow"><b>Une lecture par jour (${READINGS.length} épisodes)</b><div class="fr">Deux saisons d'une histoire de voyage, de l'A1 au B2.</div></div></div>
     <div class="phrase-row"><span style="font-size:22px">🗣️</span><div class="grow"><b>${SITUATIONS.length} situations à jouer à l'oral</b><div class="fr">Aéroport, hôtel, resto, pharmacie… pour oser parler.</div></div></div>
     <div class="field" style="margin-top:16px"><label>Comment tu t'appelles ?</label><input type="text" id="obName" placeholder="Ton prénom" style="width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--card)"></div>
     <div class="field"><label>Quel accent veux-tu entendre ?</label><select id="obAccent"><option value="en-US">🇺🇸 Américain</option><option value="en-GB">🇬🇧 Britannique</option></select></div>
-    <button class="btn block" id="obGo">Let's go! 🚀</button>
+    <button class="btn block" id="obTest">🎯 Faire le test de niveau (5-8 min)</button>
+    <button class="btn ghost block" id="obGo" style="margin-top:8px">Passer : commencer au niveau A1</button>
     <p class="small muted center" style="margin-bottom:0">Astuce : ajoute l'appli à ton écran d'accueil pour l'avoir comme une vraie appli.</p>
   </div></div>`;
-  $("#obGo").addEventListener("click", () => {
+  const finish = (toTest) => {
     S.settings.name = $("#obName").value.trim(); S.settings.accent = $("#obAccent").value;
-    S.onboarded = true; S.start = TODAY(); save(); closeModal(); go("home");
+    S.onboarded = true; S.start = TODAY(); save(); closeModal();
+    if (toTest) { go("test"); return; }
+    applyLevel("A1"); go("home");
     speak("Welcome aboard" + (S.settings.name ? ", " + S.settings.name : "") + "! Let's go!");
-  });
+  };
+  $("#obGo").addEventListener("click", () => finish(false));
+  $("#obTest").addEventListener("click", () => finish(true));
 }
 
 /* ============================ API pour les autres modules ============================ */
 window.RT = {
   $, $$, esc, shuffle, speak, norm, toast, dayStats, save, TODAY, LESSONS, pickPraise, updateStreak,
   state: () => S,
+  LEVELS, LEVEL_NAMES, lvlIdx, userLvl, lvlRank, applyLevel, go, READINGS,
   goLesson: (id) => { go("translate"); startTranslate(id); },
   registerTab: (name, fn) => { TABS[name] = fn; }
 };

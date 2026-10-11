@@ -192,7 +192,7 @@ road|route|This road goes to the beach.|Cette route va à la plage.
 street|rue|What street is it?|C'est quelle rue ?
 map|carte / plan|Can you show me on the map?|Vous pouvez me montrer sur le plan ?
 left|gauche|Turn left.|Tournez à gauche.
-right|droite|The hotel is on the right.|L'hôtel est sur la droite.
+on the right|droite|The hotel is on the right.|L'hôtel est sur la droite.
 straight on|tout droit|Go straight on.|Allez tout droit.
 corner|coin|It's on the corner.|C'est au coin.
 traffic lights|feux|Turn right at the traffic lights.|Tournez à droite aux feux.
@@ -257,7 +257,7 @@ included|inclus|Is wifi included?|Le wifi est inclus ?
 check in|s'enregistrer, arriver (hôtel)|What time can I check in?|À quelle heure je peux arriver ?
 check out|libérer la chambre|I want to check out.|Je veux libérer la chambre.
 deposit|caution|Is there a deposit?|Il y a une caution ?
-safe|coffre-fort|Is there a safe in the room?|Il y a un coffre-fort dans la chambre ?
+a safe|coffre-fort|Is there a safe in the room?|Il y a un coffre-fort dans la chambre ?
 view|vue|A room with a sea view.|Une chambre avec vue sur la mer.
 balcony|balcon|Does the room have a balcony?|La chambre a un balcon ?
 noise|bruit|There's a lot of noise.|Il y a beaucoup de bruit.
