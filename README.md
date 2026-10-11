@@ -11,9 +11,9 @@ Application pour apprendre l'**anglais de voyage**, de **débutant à B2**, pens
 | ✍️ **Phrases à traduire** | **358 phrases** FR → EN en 29 leçons de l'A1 au B2 (present perfect, conditionnels, discours rapporté, déductions, idiomes, négocier…). Trois modes : écrire, assembler les mots (puzzle) ou **dire la phrase au micro**. Contractions, orthographe UK/US et variantes acceptées. Les phrases ratées reviennent dans le « Mélange du jour ». |
 | 📐 **Grammaire** | **30 fiches** de l'A1 au B2, regroupées par niveau (des bases jusqu'au present perfect, aux conditionnels, au passif, au discours rapporté, aux déductions, aux question tags…). Chaque fiche : l'essentiel en 2 minutes, un tableau avec audio, un « Pour aller plus loin » repliable, puis 9-10 exercices corrigés (QCM, phrase à compléter, mots à remettre dans l'ordre) et un lien vers la leçon de traduction associée. Plus les **50 verbes irréguliers** indispensables avec un quiz. |
 | 📖 **Lecture du jour** | **50 épisodes** en deux saisons : « Tom's Big Trip » (A1 → A2) et « Two Brothers Down Under » (B1 → B2, Australie). Le point de départ dépend du niveau. Un épisode se débloque par jour, avec lecture audio (phrase surlignée), mots cliquables, traduction, lexique, quiz et une question à laquelle répondre à voix haute. |
-| 🗣️ **Parler** | **21 situations** à jouer à l'oral, de l'A1 au B2 (douane, resto, surréservation, médecin, litige de location, entretien d'embauche, débat…), un mode **« Répète après moi »** (shadowing avec score), un **guide de survie** (phrases magiques, urgences, faux amis) et des exercices de **prononciation** pour francophones (th, h, i/ee, -ed…). |
+| 🗣️ **Parler** | **21 situations** à jouer à l'oral, de l'A1 au B2 (douane, resto, surréservation, médecin, litige de location, entretien d'embauche, débat…), un **« Défi 1 minute »** (48 sujets de l'A1 au B2 : on parle sans s'arrêter, avec transcription, nombre de mots, débit et connecteurs, ou enregistrement pour se réécouter), une **dictée** audio, un mode **« Répète après moi »** (shadowing avec score), un **guide de survie** (phrases magiques, urgences, faux amis) et des exercices de **prononciation** pour francophones (th, h, i/ee, -ed…). |
 | 🏠 **Aujourd'hui** | Objectifs du jour, série de jours 🔥, statistiques, calendrier d'activité, conseil du jour. |
-| ⚙️ **Réglages** | Accent US/UK, choix de la voix et de la vitesse, nouveaux mots par jour, **export Anki** des 1 737 cartes, sauvegarde/restauration de la progression. |
+| ⚙️ **Réglages** | Accent US/UK, choix de la voix et de la vitesse, nouveaux mots par jour, **export Anki** des 1 737 cartes, **rappel quotidien** à ajouter à l'agenda (.ics), sauvegarde/restauration de la progression. |
 
 ## Utilisation
 
@@ -35,10 +35,12 @@ css/style.css         styles (clair / sombre)
 js/app.js             logique (répétition espacée, exercices, voix…)
 data/vocab*.js        vocabulaire (anglais|français|exemple EN|exemple FR)
 data/phrases.js       phrases à traduire
-data/readings*.js     les 30 lectures
+data/readings*.js     les 50 lectures (2 saisons)
 data/situations.js    situations orales, guide de survie, prononciation
 data/extra.js         leçons et situations supplémentaires
 data/placement.js     questions du test de niveau
+data/topics.js        sujets du « Défi 1 minute »
+js/speak2.js          Défi 1 minute et dictée
 js/level.js           test de niveau
 data/grammar*.js      fiches de grammaire et verbes irréguliers
 js/grammar.js         onglet Grammaire

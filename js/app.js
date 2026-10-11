@@ -43,7 +43,7 @@ function dayStats(d = TODAY()) {
 }
 function activityScore(d) {
   const x = S.days[d]; if (!x) return 0;
-  return (x.cards || 0) + (x.gram || 0) * 2 + (x.phrases || 0) * 2 + (x.reading || 0) * 10 + (x.sit || 0) * 8 + (x.speak || 0);
+  return (x.cards || 0) + (x.mono || 0) * 8 + (x.dict || 0) * 2 + (x.gram || 0) * 2 + (x.phrases || 0) * 2 + (x.reading || 0) * 10 + (x.sit || 0) * 8 + (x.speak || 0);
 }
 function streak() {
   let d = TODAY(), n = 0;
@@ -320,6 +320,7 @@ let currentTab = "home";
 const TABS = { home: (o) => renderHome(o), cards: (o) => renderCards(o), translate: (o) => renderTranslateHome(o), read: (o) => renderRead(o), speak: (o) => renderSpeak(o) };
 function go(tab, opts) {
   stopSpeak();
+  if (window.RT && RT.onSpeakLeave) RT.onSpeakLeave();
   currentTab = tab;
   $$(".tab").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
   $$(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + tab));
@@ -337,7 +338,7 @@ function goals() {
     { key: "cards", icon: "🃏", label: "Cartes de vocabulaire", meta: ds.cards >= 20 || (remaining === 0 && ds.cards > 0) ? plural(ds.cards, "carte") + " révisée" + (ds.cards > 1 ? "s" : "") : (remaining ? remaining + " à faire aujourd'hui" : "Rien à réviser"), done: ds.cards >= 20 || (remaining === 0 && ds.cards > 0), tab: "cards" },
     { key: "phrases", icon: "✍️", label: "10 phrases à traduire", meta: Math.min(ds.phrases, 10) + " / 10", done: ds.phrases >= 10, tab: "translate" },
     { key: "reading", icon: "📖", label: "Lecture du jour", meta: ds.reading ? "Lue ✔" : "Épisode " + (todayReadingIndex() + 1) + " — " + READINGS[todayReadingIndex()].title, done: ds.reading > 0, tab: "read" },
-    { key: "sit", icon: "🗣️", label: "Une situation à l'oral", meta: ds.sit ? "Faite ✔" : "Entraîne-toi à parler", done: ds.sit > 0, tab: "speak" }
+    { key: "sit", icon: "🗣️", label: "Parler : une situation ou un défi 1 minute", meta: ds.sit || ds.mono ? "Fait ✔" : "Entraîne-toi à parler", done: ds.sit > 0 || ds.mono > 0, tab: "speak" }
   ];
 }
 function renderHome() {
@@ -829,21 +830,24 @@ function answerQuiz(qi, oi) {
 
 /* ============================ Parler ============================ */
 let speakTab = "sit", sitState = null;
+const SPEAK_TABS = [
+  { key: "sit", label: "🎭 Situations", fn: () => renderSitList() },
+  { key: "shadow", label: "🎧 Répète après moi", fn: () => renderShadow() },
+  { key: "survival", label: "🆘 Guide de survie", fn: () => renderSurvival() },
+  { key: "pron", label: "👄 Prononciation", fn: () => renderPron() }
+];
 function renderSpeak(opts) {
   const v = $("#view-speak"); sitState = null;
   if (opts && opts.tab) speakTab = opts.tab;
   v.innerHTML = `
     <h1 class="view-title">Parler</h1>
-    <p class="view-sub">Ton point faible, c'est l'oral ? Ici on parle pour de vrai : situations de voyage, répétition et prononciation.</p>
+    <p class="view-sub">Ton point faible, c'est l'oral ? Ici on parle et on écoute pour de vrai : situations, défi 1 minute, répétition, dictée et prononciation.</p>
     <div class="chips">
-      <button class="chip ${speakTab === "sit" ? "on" : ""}" data-t="sit">🎭 Situations</button>
-      <button class="chip ${speakTab === "shadow" ? "on" : ""}" data-t="shadow">🎧 Répète après moi</button>
-      <button class="chip ${speakTab === "survival" ? "on" : ""}" data-t="survival">🆘 Guide de survie</button>
-      <button class="chip ${speakTab === "pron" ? "on" : ""}" data-t="pron">👄 Prononciation</button>
+      ${SPEAK_TABS.map(t => `<button class="chip ${speakTab === t.key ? "on" : ""}" data-t="${t.key}">${t.label}</button>`).join("")}
     </div>
     <div id="speakZone"></div>`;
-  $$(".chip[data-t]", v).forEach(b => b.addEventListener("click", () => { speakTab = b.dataset.t; stopSpeak(); renderSpeak(); }));
-  ({ sit: renderSitList, shadow: renderShadow, survival: renderSurvival, pron: renderPron })[speakTab]();
+  $$(".chip[data-t]", v).forEach(b => b.addEventListener("click", () => { speakTab = b.dataset.t; stopSpeak(); if (window.RT && RT.onSpeakLeave) RT.onSpeakLeave(); renderSpeak(); }));
+  (SPEAK_TABS.find(t => t.key === speakTab) || SPEAK_TABS[0]).fn();
 }
 function renderSitList() {
   const z = $("#speakZone");
@@ -1037,6 +1041,9 @@ function openSettings() {
       <option value="p" ${st.direction === "p" ? "selected" : ""}>Français → Anglais uniquement</option></select></div>
     <div class="switch-row"><span>Lire les mots automatiquement</span><input type="checkbox" id="sAuto" ${st.autoplay ? "checked" : ""}></div>
     <div class="field" style="margin-top:14px"><label>Thème</label><select id="sTheme"><option value="auto" ${st.theme === "auto" ? "selected" : ""}>Automatique</option><option value="light" ${st.theme === "light" ? "selected" : ""}>Clair</option><option value="dark" ${st.theme === "dark" ? "selected" : ""}>Sombre</option></select></div>
+    <h3 style="margin:22px 0 8px">Rappel quotidien</h3>
+    <p class="small muted" style="margin-top:0">Ajoute un rendez-vous de 15 minutes tous les jours dans ton agenda (téléphone, Google Agenda, iCloud…), avec une alerte et le lien vers l'appli.</p>
+    <div class="row"><input type="time" id="sRemTime" value="${S.settings.remTime || "19:00"}" style="padding:10px;border-radius:12px;border:1px solid var(--line);background:var(--card)"><button class="btn ghost small grow" id="sRem">📅 Ajouter à mon agenda</button></div>
     <h3 style="margin:22px 0 8px">Anki & sauvegarde</h3>
     <p class="small muted" style="margin-top:0">Exporte les ${WORDS.length} cartes pour les importer dans Anki (Fichier → Importer, séparateur tabulation). Tes progrès restent dans ce navigateur : fais une sauvegarde de temps en temps.</p>
     <div class="row wrap-row">
@@ -1062,6 +1069,7 @@ function openSettings() {
   $("#sAuto").addEventListener("change", e => { st.autoplay = e.target.checked; upd(); });
   $("#sTheme").addEventListener("change", e => { st.theme = e.target.value; upd(); });
   $("#sAnki").addEventListener("click", exportAnki);
+  $("#sRem").addEventListener("click", () => { st.remTime = $("#sRemTime").value || "19:00"; save(); exportReminder(st.remTime); });
   $("#sBackup").addEventListener("click", () => download("roadtrip-sauvegarde-" + new Date().toISOString().slice(0, 10) + ".json", JSON.stringify(S), "application/json"));
   $("#sRestore").addEventListener("change", e => {
     const f = e.target.files[0]; if (!f) return;
@@ -1086,6 +1094,22 @@ function exportAnki() {
   });
   download("roadtrip-anki-" + WORDS.length + "-cartes.txt", lines.join("\n"), "text/plain;charset=utf-8");
   toast("Fichier Anki téléchargé ✓");
+}
+function exportReminder(time) {
+  const [hh, mm] = time.split(":").map(Number);
+  const d = new Date(); const pad = (n) => String(n).padStart(2, "0");
+  const day = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+  const start = `${day}T${pad(hh)}${pad(mm)}00`;
+  const endM = hh * 60 + mm + 15; const end = `${day}T${pad(Math.floor(endM / 60) % 24)}${pad(endM % 60)}00`;
+  const url = location.href.split("#")[0].split("?")[0];
+  const now = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
+  const ics = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Roadtrip English//FR", "CALSCALE:GREGORIAN", "BEGIN:VEVENT",
+    "UID:roadtrip-english-daily-" + Date.now() + "@roadtrip", "DTSTAMP:" + now, "DTSTART:" + start, "DTEND:" + end, "RRULE:FREQ=DAILY",
+    "SUMMARY:🇬🇧 Anglais — 15 minutes (Roadtrip)", "DESCRIPTION:Cartes\\, phrases\\, lecture du jour et un peu d'oral. " + url, "URL:" + url,
+    "BEGIN:VALARM", "TRIGGER:PT0M", "ACTION:DISPLAY", "DESCRIPTION:C'est l'heure de ton anglais !", "END:VALARM",
+    "END:VEVENT", "END:VCALENDAR"].join("\r\n");
+  download("rappel-anglais.ics", ics, "text/calendar;charset=utf-8");
+  toast("Ouvre le fichier pour l'ajouter à ton agenda 📅");
 }
 function applyTheme() {
   const t = S.settings.theme;
@@ -1137,7 +1161,9 @@ window.RT = {
   state: () => S,
   LEVELS, LEVEL_NAMES, lvlIdx, userLvl, lvlRank, applyLevel, go, READINGS,
   goLesson: (id) => { go("translate"); startTranslate(id); },
-  registerTab: (name, fn) => { TABS[name] = fn; }
+  registerTab: (name, fn) => { TABS[name] = fn; },
+  registerSpeakTab: (key, label, fn, pos) => { const t = { key, label, fn }; if (typeof pos === "number") SPEAK_TABS.splice(pos, 0, t); else SPEAK_TABS.push(t); },
+  SR, listen, micError, wireMic, similarity, diffHTML, stopSpeak, ALL_PHRASES, LESSON_CEFR, download
 };
 
 /* ============================ Démarrage ============================ */

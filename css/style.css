@@ -290,3 +290,9 @@ main { padding: 18px 0 30px; }
 .test-text { background: var(--bg2); border-left: 4px solid var(--sea); border-radius: 12px; padding: 12px 14px; margin: 10px 0; font-size: 17px; line-height: 1.55; }
 .test-cta { border: 2px solid var(--accent); }
 .mic-btn:disabled { opacity: .4; }
+
+/* Défi 1 minute */
+.timer-ring { --p: 1; width: 150px; height: 150px; border-radius: 50%; margin: 6px auto 16px; display: grid; place-items: center; font-family: var(--font-head); font-weight: 800; font-size: 38px;
+  background: radial-gradient(closest-side, var(--bg) 82%, transparent 83% 100%), conic-gradient(var(--accent) calc(var(--p) * 360deg), var(--bg2) 0); }
+.timer-ring.running { animation: none; }
+.live-text { font-size: 17px; line-height: 1.6; min-height: 60px; }
