@@ -350,13 +350,20 @@ function highlightWord(text, w) {
   return e.replace(new RegExp(re.source, "i"), (m, pre, word) => pre + "<mark>" + word + "</mark>");
 }
 // « Je connais déjà » : le mot sort des nouveautés et revient dans un mois pour vérifier.
-function markKnown(wid) {
+function markKnown(wid, fromTri) {
   const today = TODAY();
   ["r", "p"].forEach(dir => {
     const id = cardId(wid, dir);
     if (!S.cards[id]) S.cards[id] = { ivl: 30, ease: 2.6, reps: 1, lapses: 0, due: today + 25 + Math.floor(Math.random() * 15), first: today, last: today, known: true };
   });
-  const ds = dayStats(); ds.known = (ds.known || 0) + 1; ds.cards++;
+  const ds = dayStats(); ds.known = (ds.known || 0) + 1; if (!fromTri) ds.cards++;
+  save();
+}
+
+// « Je comprends mais je ne sais pas le dire » : la carte EN → FR sort des nouveautés, la carte FR → EN reste à apprendre.
+function markUnderstood(wid) {
+  const today = TODAY(); const id = cardId(wid, "r");
+  if (!S.cards[id]) S.cards[id] = { ivl: 21, ease: 2.5, reps: 1, lapses: 0, due: today + 18 + Math.floor(Math.random() * 10), first: today - 1, last: today, known: true };
   save();
 }
 
@@ -457,12 +464,76 @@ function renderCards() {
     <h1 class="view-title">Cartes</h1>
     <p class="view-sub">Comme Anki : sois honnête avec toi-même, l'appli revient sur les mots au bon moment. Un nouveau mot trop facile ? « Je connais déjà » le met de côté.</p>
     <div class="deck-bar"><select id="deckSel" aria-label="Thème">${opts}</select>
-      <button class="btn ghost small" id="listBtn">${cardShowList ? "🃏 Réviser" : "📋 Liste"}</button></div>
+      <button class="btn ghost small" id="listBtn">${cardShowList ? "🃏 Réviser" : "📋 Liste"}</button>
+      <button class="btn ghost small" id="triBtn" title="Trier rapidement les mots que tu connais déjà">⚡ Tri</button></div>
+    ${!cardShowList && triPool().length && !(S.tri && S.tri.hide) ? `<div class="tri-banner"><div class="grow"><b>⚡ Tu connais déjà les bases ?</b>
+      <div class="small">Fais le tri express : 15 mots d'un coup, tu indiques ceux que tu connais. Les cartes ne te montreront que ce qui est vraiment nouveau.</div></div>
+      <div class="col"><button class="btn small" id="triGo">Trier</button><button class="btn ghost small" id="triHide" aria-label="Masquer">✕</button></div></div>` : ""}
     <div id="cardZone"></div>`;
   $("#deckSel").value = cardDeck;
   $("#deckSel").addEventListener("change", e => { cardDeck = e.target.value; renderCards(); });
   $("#listBtn").addEventListener("click", () => { cardShowList = !cardShowList; renderCards(); });
+  $("#triBtn").addEventListener("click", () => { cardShowList = false; renderTri(); });
+  const tg = $("#triGo"); if (tg) tg.addEventListener("click", renderTri);
+  const th = $("#triHide"); if (th) th.addEventListener("click", () => { S.tri = S.tri || { n: 0, seen: {} }; S.tri.hide = true; save(); renderCards(); });
   if (cardShowList) renderWordList(); else showCard();
+}
+
+/* ---------- Tri express : pour les « faux débutants » qui connaissent déjà beaucoup de mots ---------- */
+// Mots jamais vus (ni EN→FR ni FR→EN) et pas encore passés au tri, les plus faciles d'abord.
+function triPool() {
+  const seen = (S.tri && S.tri.seen) || {};
+  const base = cardDeck === "all" ? WORDS : (DECK[cardDeck] ? DECK[cardDeck].list : WORDS);
+  const list = base.filter(w => !seen[w.id] && !S.cards[cardId(w.id, "r")] && !S.cards[cardId(w.id, "p")]);
+  if (cardDeck !== "all") return list;
+  const ord = {}; DECKS.forEach((d, i) => ord[d.id] = LEVELS.indexOf(d.level) * 1000 + i);
+  return list.sort((a, b) => ord[a.deck] - ord[b.deck]);
+}
+const TRI_STATES = [
+  { k: "new", label: "Nouveau", icon: "✗" },
+  { k: "und", label: "Je comprends", icon: "👂" },
+  { k: "known", label: "Je sais le dire", icon: "✓" }
+];
+function renderTri() {
+  const z = $("#cardZone"); if (!z) return;
+  const tb = $(".tri-banner"); if (tb) tb.remove();
+  const batch = triPool().slice(0, 15);
+  if (!batch.length) {
+    z.innerHTML = `<div class="panel done-box"><div class="big">✅</div><h2>Tri terminé${cardDeck !== "all" ? " pour ce thème" : ""}</h2>
+      <p class="muted">Tous les mots ${cardDeck !== "all" ? "de ce thème " : ""}ont été triés ou sont déjà dans tes révisions.</p>
+      <button class="btn" id="triBack">Retour aux cartes</button></div>`;
+    $("#triBack").addEventListener("click", renderCards); return;
+  }
+  const st = {}; batch.forEach(w => st[w.id] = 0);
+  const levels = [...new Set(batch.map(w => DECK[w.deck].level))].join(", ");
+  const draw = () => {
+    const cnt = [0, 0, 0]; batch.forEach(w => cnt[st[w.id]]++);
+    z.innerHTML = `
+      <div class="panel">
+        <div class="row"><b class="grow">⚡ Tri express · ${levels}</b><span class="small muted">${triPool().length} mots à trier</span></div>
+        <p class="small muted" style="margin:6px 0 10px">Touche un mot pour changer son état : <b>✗ nouveau</b> → <b>👂 je comprends</b> (je le reconnais mais je ne le sortirais pas tout seul) → <b>✓ je sais le dire</b>. Sois honnête : les mots marqués « connus » reviennent quand même dans un mois pour vérifier.</p>
+        <div class="row" style="gap:6px;margin-bottom:10px;flex-wrap:wrap">
+          <button class="btn ghost small" data-all="2">Tout ✓</button><button class="btn ghost small" data-all="1">Tout 👂</button><button class="btn ghost small" data-all="0">Tout ✗</button></div>
+        <div class="tri-list">${batch.map(w => `<button class="tri-row s${st[w.id]}" data-w="${w.id}">
+          <span class="grow"><span class="en">${esc(w.en)}</span><span class="fr">${esc(w.fr)}</span></span>
+          <span class="tri-state">${TRI_STATES[st[w.id]].icon} ${TRI_STATES[st[w.id]].label}</span></button>`).join("")}</div>
+      </div>
+      <button class="btn block" id="triOk">Valider : ${cnt[2]} ✓ · ${cnt[1]} 👂 · ${cnt[0]} nouveaux</button>
+      <button class="btn ghost block" id="triCancel" style="margin-top:8px">Retour aux cartes</button>`;
+    $$(".tri-row", z).forEach(b => b.addEventListener("click", () => { st[b.dataset.w] = (st[b.dataset.w] + 1) % 3; draw(); }));
+    $$("[data-all]", z).forEach(b => b.addEventListener("click", () => { batch.forEach(w => st[w.id] = +b.dataset.all); draw(); }));
+    $("#triCancel").addEventListener("click", renderCards);
+    $("#triOk").addEventListener("click", () => {
+      S.tri = S.tri || { n: 0, seen: {} }; S.tri.seen = S.tri.seen || {};
+      const c = [0, 0, 0];
+      batch.forEach(w => { const k = st[w.id]; c[k]++; S.tri.seen[w.id] = 1; S.tri.n = (S.tri.n || 0) + 1;
+        if (k === 2) markKnown(w.id, true); else if (k === 1) markUnderstood(w.id); });
+      save(); updateStreak();
+      toast(`${c[2]} mots connus, ${c[1]} à savoir dire, ${c[0]} nouveaux à apprendre.`);
+      renderTri();
+    });
+  };
+  draw();
 }
 function renderWordList() {
   const z = $("#cardZone");
@@ -1215,7 +1286,7 @@ window.RT = {
   goLesson: (id) => { go("translate"); startTranslate(id); },
   registerTab: (name, fn) => { TABS[name] = fn; },
   registerSpeakTab: (key, label, fn, pos) => { const t = { key, label, fn }; if (typeof pos === "number") SPEAK_TABS.splice(pos, 0, t); else SPEAK_TABS.push(t); },
-  SR, listen, micError, wireMic, similarity, diffHTML, stopSpeak, ALL_PHRASES, LESSON_CEFR, download
+  SR, listen, micError, wireMic, similarity, bestMatch, diffHTML, stopSpeak, ALL_PHRASES, LESSON_CEFR, download
 };
 
 /* ============================ Démarrage ============================ */

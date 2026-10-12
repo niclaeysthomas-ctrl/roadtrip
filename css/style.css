@@ -302,3 +302,40 @@ main { padding: 18px 0 30px; }
 .more-ex summary { cursor: pointer; font-weight: 700; font-size: 14px; color: var(--sea); }
 .more-ex .src { font-size: 11px; color: var(--muted); margin-top: 3px; font-weight: 600; }
 .flash mark { background: var(--warn-soft); color: inherit; border-radius: 4px; padding: 0 2px; }
+
+/* ---------- Fiches de grammaire (refonte) ---------- */
+.gram-memo { background: var(--sea-soft); border-left: 4px solid var(--sea); border-radius: 12px; padding: 12px 14px; margin: 0 0 14px; font-size: 16px; line-height: 1.5; }
+.gram-memo .k { font-family: var(--font-head); font-weight: 700; font-size: 14px; color: var(--sea); margin-bottom: 4px; }
+.gram-sec { margin: 16px 0; }
+.gram-sec h4 { font-family: var(--font-head); font-size: 17px; margin: 0 0 8px; }
+.formula { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 15px; background: var(--bg); border: 1px dashed var(--line); border-radius: 10px; padding: 8px 12px; margin: 6px 0; overflow-wrap: anywhere; }
+.formula b { color: var(--accent); }
+.mistake { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin: 8px 0; background: var(--card); }
+.mistake .bad { color: var(--bad); text-decoration: line-through; text-decoration-thickness: 1px; font-weight: 600; }
+.mistake .good { color: var(--good); font-weight: 700; margin: 2px 0 4px; }
+.mistake .why { color: var(--muted); font-size: 14px; line-height: 1.45; }
+.ins { font-size: 14px; font-weight: 700; color: var(--sea); text-transform: none; margin-bottom: 6px; }
+.ex-type { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+.retry-tag { color: var(--warn); }
+.combo { display: inline-block; background: var(--warn-soft); color: var(--ink); border-radius: 999px; padding: 4px 12px; font-size: 14px; font-weight: 700; margin-bottom: 10px; animation: pop .25s ease-out; }
+@keyframes pop { from { transform: scale(.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.err-tiles { justify-content: center; }
+.err-tiles .tile { font-weight: 500; }
+.err-tiles .tile:not(:disabled):hover { border-color: var(--accent); }
+.tile.err { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); font-weight: 700; }
+.tile.miss-tap { background: var(--warn-soft); border-color: var(--warn); }
+
+/* ---------- Tri express (cartes) ---------- */
+.tri-banner { display: flex; gap: 12px; align-items: center; background: var(--warn-soft); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; margin: 0 0 14px; }
+.tri-banner .col { display: flex; flex-direction: column; gap: 6px; }
+.tri-list { display: flex; flex-direction: column; gap: 6px; }
+.tri-row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 1px solid var(--line); border-left-width: 5px; border-radius: 12px; padding: 10px 12px; background: var(--card); color: var(--ink); font: inherit; cursor: pointer; }
+.tri-row .en { display: block; font-weight: 700; font-size: 17px; }
+.tri-row .fr { display: block; color: var(--muted); font-size: 14px; }
+.tri-row .tri-state { font-size: 13px; font-weight: 700; white-space: nowrap; }
+.tri-row.s0 { border-left-color: var(--line); }
+.tri-row.s0 .tri-state { color: var(--muted); }
+.tri-row.s1 { border-left-color: var(--sea); background: var(--sea-soft); }
+.tri-row.s1 .tri-state { color: var(--sea); }
+.tri-row.s2 { border-left-color: var(--good); background: var(--good-soft); }
+.tri-row.s2 .tri-state { color: var(--good); }
