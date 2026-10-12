@@ -25,14 +25,14 @@ function pickTopic(lvl, avoid) {
 }
 function renderMono() {
   stopAll();
-  if (!D.lvl) D.lvl = RT.LEVELS[RT.userLvl()];
+  if (!D.lvl) D.lvl = RT.LEVELS[Math.min(RT.userLvl(), 4)];
   if (!D.topic || D.topic.lvl !== D.lvl) D.topic = pickTopic(D.lvl);
   if (!D.mode) D.mode = RT.SR ? "text" : (HasMR ? "audio" : "timer");
   const z = $("#speakZone"); const t = D.topic;
   const best = st().mono.filter(m => m.t === t.i && m.words).reduce((a, m) => Math.max(a, m.words), 0);
   z.innerHTML = `
     <p class="small muted" style="margin-top:0">Parle <b>sans t'arrêter</b> sur le sujet, même avec des phrases simples et des fautes. C'est le meilleur exercice pour la fluidité. Astuce : fais le même sujet deux ou trois fois de suite, tu iras plus loin à chaque fois.</p>
-    <div class="chips">${["A1", "A2", "B1", "B2"].map(L => `<button class="chip ${D.lvl === L ? "on" : ""}" data-ml="${L}">${L}</button>`).join("")}</div>
+    <div class="chips">${["A1", "A2", "B1", "B2", "C1"].map(L => `<button class="chip ${D.lvl === L ? "on" : ""}" data-ml="${L}">${L}</button>`).join("")}</div>
     <div class="panel">
       <div class="row"><span class="level-tag">${t.lvl}</span><div class="grow"></div><button class="btn ghost small" id="mNext">🔀 Autre sujet</button></div>
       <div class="row" style="margin-top:10px;align-items:flex-start"><div class="prompt-fr grow" style="margin:0">${esc(t.q)}</div><button class="audio-btn" id="mSay" aria-label="Écouter">🔊</button></div>

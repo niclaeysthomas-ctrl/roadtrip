@@ -163,14 +163,14 @@ function diffHTML(user, answer) {
 }
 
 /* ============================ Niveaux ============================ */
-const LEVELS = ["A1", "A2", "B1", "B2", "C1"];
-const LEVEL_NAMES = { A1: "Débutant", A2: "Élémentaire", B1: "Intermédiaire", B2: "Intermédiaire avancé", C1: "Avancé" };
+const LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"];
+const LEVEL_NAMES = { A1: "Débutant", A2: "Élémentaire", B1: "Intermédiaire", B2: "Intermédiaire avancé", C1: "Avancé", C2: "Maîtrise" };
 function lvlIdx(l) { const i = LEVELS.indexOf(String(l || "A1").replace("+", "")); return i < 0 ? 0 : i; }
-function userLvl() { return Math.min(lvlIdx(S.level || "A1"), 3); } // le contenu va jusqu'au B2
+function userLvl() { return Math.min(lvlIdx(S.level || "A1"), 5); } // le contenu va jusqu'au C2
 // Plus le score est bas, plus le contenu est prioritaire : niveau de l'élève, puis le niveau au-dessus, puis les révisions en dessous.
 function lvlRank(i) { const u = userLvl(); return i >= u ? i - u : (u - i) + 0.5; }
-const LESSON_CEFR = { 1: 0, 2: 1, 3: 1, 4: 2, 5: 3 };
-const LESSON_LABEL = { 1: "A1", 2: "A2", 3: "A2+", 4: "B1", 5: "B2" };
+const LESSON_CEFR = { 1: 0, 2: 1, 3: 1, 4: 2, 5: 3, 6: 4 };
+const LESSON_LABEL = { 1: "A1", 2: "A2", 3: "A2+", 4: "B1", 5: "B2", 6: "C1" };
 
 /* ============================ Données ============================ */
 const DECK_ORDER = ["basics", "questions", "numbers", "food", "transport", "hotel", "airport", "verbs", "adjectives", "time", "shopping", "city", "health", "people", "weather", "leisure", "connectors", "body"];
@@ -184,7 +184,7 @@ DECKS.forEach(d => {
   d.words.trim().split("\n").forEach(line => {
     const p = line.split("|").map(s => s.trim()); if (p.length < 2) return;
     let id = d.id + ":" + slug(p[0]); while (WORD[id]) id += "-2";
-    const w = { id, deck: d.id, en: p[0], fr: p[1], exEn: p[2] || "", exFr: p[3] || "" };
+    const w = { id, deck: d.id, en: p[0], fr: p[1], exEn: p[2] || "", exFr: p[3] || "", ex2En: p[4] || "", ex2Fr: p[5] || "" };
     WORDS.push(w); WORD[id] = w; d.list.push(w);
   });
 });
@@ -304,6 +304,51 @@ function buildQueue(deckId) {
   return q;
 }
 function countDueToday() { return buildQueue("all").length; }
+
+/* ============================ Exemples tirés du corpus ============================ */
+// Toutes les phrases de l'appli (lectures, traductions, situations, exemples des autres cartes)
+let CORPUS = null;
+function buildCorpus() {
+  CORPUS = [];
+  READINGS.forEach((r, i) => r.text.split("\n").forEach(par => (par.match(/[^.!?]+[.!?]+["”’)]*|[^.!?]+$/g) || []).forEach(sn => {
+    const t = sn.trim(); if (t.split(" ").length >= 5 && t.split(" ").length <= 30) CORPUS.push({ en: t, fr: "", src: "Lecture · épisode " + (i + 1) });
+  })));
+  LESSONS.forEach(l => l.list.forEach(p => CORPUS.push({ en: p.answers[0], fr: p.fr, src: "Phrase · " + l.name })));
+  SITUATIONS.forEach(st => st.steps.forEach(x => { if (!/^\(/.test(x.them)) CORPUS.push({ en: x.them, fr: "", src: "Situation · " + st.title }); }));
+  WORDS.forEach(w => { if (w.exEn) CORPUS.push({ en: w.exEn, fr: w.exFr, src: "Carte · " + w.en, wid: w.id }); if (w.ex2En) CORPUS.push({ en: w.ex2En, fr: w.ex2Fr, src: "Carte · " + w.en, wid: w.id }); });
+}
+const IRR_FORMS = {};
+(window.IRREGULARS || "").trim().split("\n").forEach(l => { const [b, p, pp] = l.split("|"); if (b) IRR_FORMS[b.trim()] = (p + "/" + pp).replace(/\(.*?\)/g, "").split("/").map(x => x.trim()).filter(Boolean); });
+function wordRegex(w) {
+  let core = w.en.replace(/\(.*?\)/g, "").replace(/\.\.\.|…/g, " ").replace(/^(to|a|an|the)\s+/i, "").trim().toLowerCase();
+  if (core.length < 3 || /[?!]/.test(core)) return null;
+  const words = core.split(/\s+/); const first = words[0];
+  const esc2 = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const forms = new Set([first, first + "s", first + "es", first + "ed", first + "d", first + "ing", first + "'s"]);
+  if (first.endsWith("e")) forms.add(first.slice(0, -1) + "ing");
+  if (first.endsWith("y")) { forms.add(first.slice(0, -1) + "ies"); forms.add(first.slice(0, -1) + "ied"); }
+  if (/[^aeiou][aeiou][bdgmnprt]$/.test(first)) { forms.add(first + first.slice(-1) + "ing"); forms.add(first + first.slice(-1) + "ed"); }
+  (IRR_FORMS[first] || []).forEach(f => forms.add(f));
+  const head = "(?:" + [...forms].map(esc2).join("|") + ")";
+  const rest = words.slice(1).map(esc2).join("\\s+");
+  // Nom introduit par un article (« a can ») : on exige un déterminant devant, pour ne pas confondre avec le verbe
+  const det = /^(a|an|the)\s/i.test(w.en.trim()) ? "(?:a|an|the|my|your|his|her|its|our|their|this|some|any|no|every|another)\\s+(?:(?:big|small|little|new|old|good|bad|huge|long|short|full|hefty|heavy|real|great|first|last|second|nice|cheap|expensive)\\s+)?" : "";
+  return new RegExp("(^|[^a-z'])(" + det + head + (rest ? "\\s+" + rest : "") + ")(?![a-z])", "i");
+}
+function corpusExamples(w, n) {
+  if (!CORPUS) buildCorpus();
+  const re = wordRegex(w); if (!re) return [];
+  const own = new Set([w.exEn, w.ex2En]);
+  const hits = CORPUS.filter(c => c.wid !== w.id && !own.has(c.en) && re.test(c.en));
+  // Ordre stable mais varié selon le mot : priorité aux lectures et aux phrases traduites
+  const h = (str) => { let x = 0; for (let i = 0; i < str.length; i++) x = (x * 31 + str.charCodeAt(i)) >>> 0; return x; };
+  const score = (c) => (c.src.startsWith("Lecture") ? 0 : c.src.startsWith("Phrase") ? 1 : 2) * 1e10 + h(w.id + c.en);
+  return hits.sort((a, b) => score(a) - score(b)).filter((c, i, arr) => arr.findIndex(d => d.en === c.en) === i).slice(0, n);
+}
+function highlightWord(text, w) {
+  const re = wordRegex(w); const e = esc(text); if (!re) return e;
+  return e.replace(new RegExp(re.source, "i"), (m, pre, word) => pre + "<mark>" + word + "</mark>");
+}
 // « Je connais déjà » : le mot sort des nouveautés et revient dans un mois pour vérifier.
 function markKnown(wid) {
   const today = TODAY();
@@ -406,7 +451,7 @@ function renderCards() {
   const v = $("#view-cards");
   cardQueue = buildQueue(cardDeck); cardFlipped = false; sessionCount = 0;
   const opts = `<option value="all">Tous les thèmes (${WORDS.length} mots) — priorité au niveau ${LEVELS[userLvl()]}</option>` +
-    LEVELS.slice(0, 4).map(L => { const ds = DECKS.filter(d => d.level === L); if (!ds.length) return "";
+    LEVELS.map(L => { const ds = DECKS.filter(d => d.level === L); if (!ds.length) return "";
       return `<optgroup label="${L} — ${LEVEL_NAMES[L]}">` + ds.map(d => `<option value="${d.id}">${d.icon} ${esc(d.name)} — ${d.list.filter(w => wordLevel(w) > 0).length}/${d.list.length}</option>`).join("") + "</optgroup>"; }).join("");
   v.innerHTML = `
     <h1 class="view-title">Cartes</h1>
@@ -473,8 +518,9 @@ function showCard() {
       <div class="back hidden" id="back">
         <div class="row" style="justify-content:center"><div class="answer">${esc(back)}</div>
           ${dir === "p" ? `<button class="audio-btn" id="sayBack" aria-label="Écouter">🔊</button>` : ""}</div>
-        ${w.exEn ? `<div class="ex"><div class="grow"><div class="en">${esc(w.exEn)}</div><div class="fr">${esc(w.exFr)}</div></div>
-          <button class="audio-btn" id="sayEx" aria-label="Écouter l'exemple">🔊</button></div>` : ""}
+        ${[[w.exEn, w.exFr], [w.ex2En, w.ex2Fr]].filter(x => x[0]).map(([e, f]) => `<div class="ex"><div class="grow"><div class="en">${esc(e)}</div><div class="fr">${esc(f)}</div></div>
+          <button class="audio-btn" data-say="${esc(e)}" aria-label="Écouter l'exemple">🔊</button></div>`).join("")}
+        <div id="moreEx"></div>
       </div>
     </div>
     <div id="cardActions" style="margin-top:14px">
@@ -492,7 +538,13 @@ function flipCard() {
   const id = cardQueue[0]; const [wid, dir] = id.split("|"); const w = WORD[wid]; const st = S.cards[id];
   $("#back").classList.remove("hidden");
   if (dir === "p") { $("#sayBack").addEventListener("click", () => speak(w.en)); if (S.settings.autoplay) speak(w.en); }
-  const ex = $("#sayEx"); if (ex) ex.addEventListener("click", () => speak(w.exEn));
+  $$("#back [data-say]").forEach(b => b.addEventListener("click", () => speak(b.dataset.say)));
+  const extra = corpusExamples(w, w.ex2En ? 1 : 2);
+  if (extra.length) {
+    $("#moreEx").innerHTML = `<details class="more-ex"><summary>📚 Le mot en contexte (${extra.length})</summary>${extra.map(x => `<div class="ex"><div class="grow"><div class="en">${highlightWord(x.en, w)}</div>${x.fr ? `<div class="fr">${esc(x.fr)}</div>` : ""}<div class="src">${esc(x.src)}</div></div>
+      <button class="audio-btn" data-say="${esc(x.en)}" aria-label="Écouter">🔊</button></div>`).join("")}</details>`;
+    $$("#moreEx [data-say]").forEach(b => b.addEventListener("click", () => speak(b.dataset.say)));
+  }
   const labels = ["À revoir", "Difficile", "Bien", "Facile"], cls = ["again", "hard", "good", "easy"];
   $("#cardActions").innerHTML = `<div class="grades">${labels.map((l, g) => `<button class="grade ${cls[g]}" data-g="${g}">${l}<small>${fmtIvl(previewIvl(st, g))}</small></button>`).join("")}</div>
     <p class="small muted center" style="margin-top:8px">Raccourcis clavier : 1 · 2 · 3 · 4</p>`;
@@ -532,7 +584,7 @@ function renderTranslateHome() {
       <button class="lesson featured" data-l="mix"><div class="lv">⚡ RECOMMANDÉ · NIVEAU ${LEVELS[userLvl()]}</div><div class="nm">Mélange du jour — 10 phrases</div>
         <div class="small" style="opacity:.8">Tes erreurs d'abord, puis de nouvelles phrases de ton niveau et du niveau au-dessus.</div></button>
     </div>
-    ${[5, 4, 3, 2, 1].filter(lv => LESSONS.some(l => l.level === lv)).sort((a, b) => lvlRank(LESSON_CEFR[a]) - lvlRank(LESSON_CEFR[b]) || a - b).map(lv => {
+    ${[6, 5, 4, 3, 2, 1].filter(lv => LESSONS.some(l => l.level === lv)).sort((a, b) => lvlRank(LESSON_CEFR[a]) - lvlRank(LESSON_CEFR[b]) || a - b).map(lv => {
       const ls = LESSONS.filter(l => l.level === lv); const rec = lvlRank(LESSON_CEFR[lv]) <= 1;
       return `<h3 class="lvl-head">${LESSON_LABEL[lv]} ${rec ? '<span class="rec-tag">pour toi</span>' : '<span class="small muted">révision / plus tard</span>'}</h3>
       <div class="lesson-grid">${ls.map(l => { const m = l.list.filter(phraseMastered).length; return `<button class="lesson" data-l="${l.id}">
@@ -742,7 +794,7 @@ function drawReading() {
   const allDone = doneSet.size >= READINGS.length;
   v.innerHTML = `
     <h1 class="view-title">Lecture du jour</h1>
-    <p class="view-sub">Un épisode par jour. Saison 1 « Tom's Big Trip » (A1 → A2) · Saison 2 « Two Brothers Down Under » (B1 → B2). Touche les mots soulignés pour la traduction.</p>
+    <p class="view-sub">Un épisode par jour. Saison 1 « Tom's Big Trip » (A1 → A2) · Saison 2 « Two Brothers Down Under » (B1 → B2) · Saison 3 « Making It Abroad » (C1). Touche les mots soulignés pour la traduction.</p>
     ${readToday() && !allDone && idx === todayReadingIndex() && idx + 1 < READINGS.length ? `<div class="lesson-tip">✅ Lecture du jour faite ! L'épisode ${idx + 2} se débloque demain. Tu peux relire les précédents en attendant.</div>` : ""}
     ${allDone ? `<div class="lesson-tip">🏁 Tu as fini toute l'histoire ! Chaque jour, un épisode revient pour une relecture : essaie de le lire à voix haute, sans la traduction.</div>` : ""}
     <div class="panel">
@@ -768,7 +820,7 @@ function drawReading() {
       ${SR ? `<button class="mic-btn" id="rdMic">🎤</button><div class="heard center" id="rdHeard"></div>` : ""}
     </div>
     <div class="panel"><h3>Tous les épisodes</h3>
-      ${[[1, "Saison 1 · Tom's Big Trip (A1 → A2)"], [2, "Saison 2 · Two Brothers Down Under (B1 → B2)"]].map(([sn, label]) => `<div class="small muted" style="margin:10px 0 6px;font-weight:700">${label}</div>
+      ${[[1, "Saison 1 · Tom's Big Trip (A1 → A2)"], [2, "Saison 2 · Two Brothers Down Under (B1 → B2)"], [3, "Saison 3 · Making It Abroad (C1)"]].map(([sn, label]) => `<div class="small muted" style="margin:10px 0 6px;font-weight:700">${label}</div>
       <div class="ep-list">${READINGS.map((x, i) => [x, i]).filter(([x]) => (x.season || 1) === sn).map(([x, i]) => { const locked = isLocked(i, doneSet); return `<button class="ep ${doneSet.has(i) ? "done" : ""} ${i === idx ? "current" : ""} ${locked ? "locked" : ""}" data-ep="${i}" ${locked ? "disabled" : ""} title="${esc(x.title)}">${locked ? "🔒" : i + 1}</button>`; }).join("")}</div>`).join("")}
       <p class="small muted" style="margin-bottom:0">${doneSet.size}/${READINGS.length} épisodes lus${done ? " · Score de cet épisode : " + done.score + "/3" : ""}</p>
     </div>`;
@@ -852,7 +904,7 @@ function renderSpeak(opts) {
 function renderSitList() {
   const z = $("#speakZone");
   z.innerHTML = `<p class="small muted" style="margin-top:0">Tu joues ton rôle à voix haute. L'autre personne te parle, on te dit en français ce que tu dois répondre. ${SR ? "Le micro vérifie ta phrase." : "Dis ta phrase, puis compare avec la réponse."}</p>
-    ${LEVELS.slice(0, 4).filter(L => SITUATIONS.some(s => s.level === L)).sort((a, b) => lvlRank(lvlIdx(a)) - lvlRank(lvlIdx(b))).map(L => `<h3 class="lvl-head">${L} ${lvlRank(lvlIdx(L)) <= 1 ? '<span class="rec-tag">pour toi</span>' : ""}</h3>
+    ${LEVELS.filter(L => SITUATIONS.some(s => s.level === L)).sort((a, b) => lvlRank(lvlIdx(a)) - lvlRank(lvlIdx(b))).map(L => `<h3 class="lvl-head">${L} ${lvlRank(lvlIdx(L)) <= 1 ? '<span class="rec-tag">pour toi</span>' : ""}</h3>
     <div class="sit-grid">${SITUATIONS.filter(s => s.level === L).map(s => `<button class="sit" data-s="${s.id}">${S.sit[s.id] ? `<span class="badge">✓ ${S.sit[s.id]}×</span>` : ""}<div class="ic">${s.icon}</div><div class="t">${esc(s.title)}</div><div class="w">avec : ${esc(s.who)}</div></button>`).join("")}</div>`).join("")}`;
   $$(".sit", z).forEach(b => b.addEventListener("click", () => startSit(b.dataset.s)));
 }
@@ -1088,9 +1140,9 @@ function exportAnki() {
   const clean = (s) => esc(s).replace(/[\t\n\r]/g, " ");
   const lines = ["#separator:tab", "#html:true", "#tags column:3"];
   WORDS.forEach(w => {
-    const front = `<b>${clean(w.en)}</b>${w.exEn ? "<br><i>" + clean(w.exEn) + "</i>" : ""}`;
-    const back = `<b>${clean(w.fr)}</b>${w.exFr ? "<br><i>" + clean(w.exFr) + "</i>" : ""}`;
-    lines.push(front + "\t" + back + "\troadtrip::" + w.deck);
+    const front = `<b>${clean(w.en)}</b>${w.exEn ? "<br><i>" + clean(w.exEn) + "</i>" : ""}${w.ex2En ? "<br><i>" + clean(w.ex2En) + "</i>" : ""}`;
+    const back = `<b>${clean(w.fr)}</b>${w.exFr ? "<br><i>" + clean(w.exFr) + "</i>" : ""}${w.ex2Fr ? "<br><i>" + clean(w.ex2Fr) + "</i>" : ""}`;
+    lines.push(front + "\t" + back + "\troadtrip::" + (DECK[w.deck].level || "A1") + "::" + w.deck);
   });
   download("roadtrip-anki-" + WORDS.length + "-cartes.txt", lines.join("\n"), "text/plain;charset=utf-8");
   toast("Fichier Anki téléchargé ✓");
@@ -1119,9 +1171,9 @@ function applyTheme() {
 /* Applique un niveau à toute l'appli */
 function applyLevel(L) {
   S.level = L; const u = lvlIdx(L);
-  const minNew = [15, 20, 20, 25, 25][u];
+  const minNew = [15, 20, 20, 25, 30, 30][u];
   if (S.settings.newPerDay < minNew) S.settings.newPerDay = minNew;
-  const start = [0, 10, 30, 40, 40][u];
+  const start = [0, 10, 30, 40, 50, 50][u];
   // On ne recule jamais le point de départ si l'élève a déjà lu plus loin
   S.readStart = Math.min(start, READINGS.length - 1);
   save();
@@ -1179,5 +1231,5 @@ if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
   window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
 }
 // Accès pour les tests
-window.__RT = { WORDS, ALL_PHRASES, READINGS, SITUATIONS, norm, similarity, bestMatch, buildQueue, state: () => S };
+window.__RT = { corpusExamples, WORDS, ALL_PHRASES, READINGS, SITUATIONS, norm, similarity, bestMatch, buildQueue, state: () => S };
 })();

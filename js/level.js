@@ -17,7 +17,7 @@ const CAN_DO = {
   A2: "Tu te débrouilles dans les situations courantes de voyage (hôtel, transports, magasins) et tu peux parler de toi simplement, au présent et au passé.",
   B1: "Tu gères la plupart des situations de voyage, tu racontes une expérience, tu donnes ton avis et tu comprends l'essentiel d'une conversation claire.",
   B2: "Tu discutes avec aisance avec des natifs, tu argumentes, tu gères des problèmes (réclamations, démarches) et tu comprends des textes assez complexes.",
-  C1: "Tu t'exprimes avec aisance et précision, y compris sur des sujets complexes. L'appli va jusqu'au B2 : complète avec des films, podcasts et livres en VO."
+  C1: "Tu t'exprimes avec aisance et précision, y compris sur des sujets complexes. L'appli monte jusqu'au C1-C2 (cartes, grammaire, saison 3) : complète avec des films, podcasts et livres en VO."
 };
 
 let T = null;
@@ -127,7 +127,7 @@ function finish(level) {
   RT.applyLevel(level);
   save();
   const u = RT.lvlIdx(level);
-  const readEp = [1, 11, 31, 41, 41][u];
+  const readEp = [1, 11, 31, 41, 51][u];
   const weak = Object.entries(by).filter(([, x]) => x.n >= 2).sort((a, b) => a[1].ok / a[1].n - b[1].ok / b[1].n)[0];
   v.innerHTML = `
     <div class="panel center" style="padding:24px 18px">
@@ -147,9 +147,9 @@ function finish(level) {
     </div>
     <div class="panel">
       <h3>Ce qui change dans l'appli</h3>
-      <div class="phrase-row"><span style="font-size:20px">🃏</span><div class="grow">Les nouveaux mots commencent par le niveau <b>${RT.LEVELS[Math.min(u, 3)]}</b>. Les mots trop faciles : « Je connais déjà ».</div></div>
-      <div class="phrase-row"><span style="font-size:20px">✍️</span><div class="grow">Le mélange du jour pioche dans les leçons <b>${RT.LEVELS[Math.min(u, 3)]}</b>${u < 3 ? " et " + RT.LEVELS[u + 1] : ""}.</div></div>
-      <div class="phrase-row"><span style="font-size:20px">📐</span><div class="grow">La fiche de grammaire conseillée est au niveau ${RT.LEVELS[Math.min(u, 3)]}. Les fiches plus simples restent dispo en révision.</div></div>
+      <div class="phrase-row"><span style="font-size:20px">🃏</span><div class="grow">Les nouveaux mots commencent par le niveau <b>${RT.LEVELS[u]}</b>. Les mots trop faciles : « Je connais déjà ».</div></div>
+      <div class="phrase-row"><span style="font-size:20px">✍️</span><div class="grow">Le mélange du jour pioche dans les leçons <b>${RT.LEVELS[Math.min(u, 4)]}</b>${u < 4 ? " et " + RT.LEVELS[u + 1] : ""}.</div></div>
+      <div class="phrase-row"><span style="font-size:20px">📐</span><div class="grow">La fiche de grammaire conseillée est au niveau ${RT.LEVELS[Math.min(u, 4)]}. Les fiches plus simples restent dispo en révision.</div></div>
       <div class="phrase-row"><span style="font-size:20px">📖</span><div class="grow">La lecture du jour démarre à l'<b>épisode ${readEp}</b>. Les épisodes précédents sont débloqués.</div></div>
       <p class="small muted" style="margin-bottom:0">Trop facile ou trop dur ? Change le niveau à la main dans les réglages ⚙️.</p>
     </div>

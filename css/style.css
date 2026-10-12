@@ -296,3 +296,9 @@ main { padding: 18px 0 30px; }
   background: radial-gradient(closest-side, var(--bg) 82%, transparent 83% 100%), conic-gradient(var(--accent) calc(var(--p) * 360deg), var(--bg2) 0); }
 .timer-ring.running { animation: none; }
 .live-text { font-size: 17px; line-height: 1.6; min-height: 60px; }
+
+/* Exemples supplémentaires */
+.more-ex { margin-top: 12px; text-align: left; }
+.more-ex summary { cursor: pointer; font-weight: 700; font-size: 14px; color: var(--sea); }
+.more-ex .src { font-size: 11px; color: var(--muted); margin-top: 3px; font-weight: 600; }
+.flash mark { background: var(--warn-soft); color: inherit; border-radius: 4px; padding: 0 2px; }

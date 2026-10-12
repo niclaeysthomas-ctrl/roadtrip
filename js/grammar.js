@@ -11,7 +11,7 @@ const FICHES_RAW = (window.GRAMMAR || []).map(g => ({
   exercises: g.ex.trim().split("\n").map(line => {
     const p = line.split("|");
     if (p[0] === "m") return { type: "m", q: p[1], opts: p[2].split(";"), a: +p[3], why: p[4] || "" };
-    if (p[0] === "f") return { type: "f", q: p[1], answers: p[2].split("//").map(s => s.trim()), hint: p[3] || "" };
+    if (p[0] === "f") return { type: "f", q: p[1].replace(/___(\s+___)+/g, "___"), answers: p[2].split("//").map(s => s.trim()), hint: p[3] || "" };
     return { type: "o", fr: p[1], en: p[2] };
   })
 }));
@@ -38,17 +38,19 @@ function render(opts) {
     <p class="view-sub">Des fiches courtes pour comprendre comment se construisent les phrases, puis des exercices pour vérifier. Une fiche est réussie à partir de 80 %.</p>
     <div class="chips">
       <button class="chip ${view.tab === "fiches" ? "on" : ""}" data-gt="fiches">📐 Fiches (${done}/${FICHES.length})</button>
+      <button class="chip ${view.tab === "mix" ? "on" : ""}" data-gt="mix">🎲 Entraînement mixte</button>
       <button class="chip ${view.tab === "irr" ? "on" : ""}" data-gt="irr">🔀 Verbes irréguliers</button>
     </div>
     <div id="gramZone"></div>`;
   $$("[data-gt]", v).forEach(b => b.addEventListener("click", () => { view.tab = b.dataset.gt; render(); }));
   if (view.tab === "irr") return renderIrr();
+  if (view.tab === "mix") return renderMix();
   const z = $("#gramZone");
   z.innerHTML = `
     ${nx ? `<button class="lesson featured" style="width:100%;margin-bottom:12px" data-f="${nx.id}"><div class="lv">⚡ FICHE CONSEILLÉE</div><div class="nm">${nx.icon} ${esc(nx.title)}</div>
       <div class="small" style="opacity:.8">Niveau ${nx.level} · les fiches sont dans l'ordre : chacune s'appuie sur les précédentes.</div></button>`
       : `<div class="lesson-tip">🏆 Toutes les fiches sont réussies ! Refais-les de temps en temps pour ne pas oublier.</div>`}
-    ${[0, 1, 2, 3].map(L => { const fs = FICHES.filter(f => f.lvl === L); if (!fs.length) return "";
+    ${[0, 1, 2, 3, 4].map(L => { const fs = FICHES.filter(f => f.lvl === L); if (!fs.length) return "";
       const u = RT.userLvl(); const tag = L === u || L === u + 1 ? '<span class="rec-tag">pour toi</span>' : L < u ? '<span class="small muted">révision</span>' : "";
       return `<h3 class="lvl-head">${RT.LEVELS[L]} — ${RT.LEVEL_NAMES[RT.LEVELS[L]]} ${tag}</h3>
       <div class="panel" style="padding:6px 14px">
@@ -84,6 +86,28 @@ function openFiche(id) {
 
 let ex = null;
 function startEx(f) { ex = { f, items: shuffle(f.exercises), i: 0, ok: 0 }; drawEx(); }
+
+/* Entraînement mixte : des exercices piochés dans plusieurs fiches */
+function renderMix() {
+  const z = $("#gramZone"); const u = RT.userLvl();
+  const opts = [
+    { k: "level", label: "Mon niveau (" + RT.LEVELS[u] + " et autour)", pick: () => FICHES.filter(f => Math.abs(f.lvl - u) <= 1) },
+    { k: "done", label: "Fiches déjà travaillées", pick: () => FICHES.filter(f => best(f.id) !== null) },
+    { k: "weak", label: "Mes points faibles (score < 80 %)", pick: () => FICHES.filter(f => best(f.id) !== null && best(f.id) < 0.8) },
+    { k: "all", label: "Tout le programme", pick: () => FICHES }
+  ];
+  z.innerHTML = `<div class="panel">
+    <h3>🎲 Entraînement mixte</h3>
+    <p class="small muted" style="margin-top:0">20 exercices tirés au hasard dans plusieurs fiches. Mélanger les règles, c'est ce qui les ancre vraiment (et c'est plus proche d'une vraie conversation).</p>
+    ${opts.map(o => { const n = o.pick().length; return `<button class="quiz-opt" data-mix="${o.k}" ${n ? "" : "disabled"}>${o.label} <span class="small muted">· ${n} fiche${n > 1 ? "s" : ""}</span></button>`; }).join("")}
+  </div>`;
+  $$("[data-mix]", z).forEach(b => b.addEventListener("click", () => {
+    const fs = opts.find(o => o.k === b.dataset.mix).pick();
+    const pool = shuffle(fs.flatMap(f => f.exercises.map(e => ({ ...e, _f: f }))));
+    ex = { f: { id: "mix", title: "Entraînement mixte", lesson: null, icon: "🎲" }, items: pool.slice(0, 20), i: 0, ok: 0, mix: true };
+    drawEx();
+  }));
+}
 function drawEx() {
   const v = $("#view-grammar"); const { f, items, i } = ex;
   if (i >= items.length) return endEx();
@@ -105,7 +129,8 @@ function drawEx() {
       <div class="grow"><div class="progress"><div style="width:${i / items.length * 100}%"></div></div></div><span class="small muted">${i + 1}/${items.length}</span></div>
     <div class="panel">${body}<div id="gFb"></div></div>
     <div id="gNext"></div>`;
-  $("#gQuit").addEventListener("click", () => openFiche(f.id));
+  $("#gQuit").addEventListener("click", () => (ex.mix ? (view.tab = "mix", render()) : openFiche(f.id)));
+  if (ex.mix && it._f) { const tag = document.createElement("div"); tag.className = "small muted"; tag.style.marginBottom = "6px"; tag.textContent = it._f.icon + " " + it._f.title; $(".panel", v).prepend(tag); }
   if (it.type === "m") $$(".quiz-opt", v).forEach(b => b.addEventListener("click", () => answerM(it, +b.dataset.k)));
   if (it.type === "f") {
     const inp = $("#gIn"); setTimeout(() => inp.focus(), 50);
@@ -117,6 +142,7 @@ function drawEx() {
 }
 function feedback(ok, html, sayText) {
   if (ok) ex.ok++;
+  else if (ex.mix) { const it = ex.items[ex.i]; if (it && it._f) (ex.missed = ex.missed || []).push(it._f); }
   ex.answered = true;
   $("#gFb").innerHTML = `<div class="feedback ${ok ? "ok" : "ko"}"><div class="title">${ok ? "✅ " + RT.pickPraise() : "❌ Pas tout à fait"}</div>${html}</div>`;
   if (sayText) speak(sayText);
@@ -163,6 +189,16 @@ function wireOrder(it) {
 function next() { ex.i++; drawEx(); }
 function endEx() {
   const { f, items, ok } = ex; const score = ok / items.length;
+  if (ex.mix) {
+    const v = $("#view-grammar");
+    const missed = {}; (ex.missed || []).forEach(x => { missed[x.id] = x; });
+    v.innerHTML = `<div class="panel done-box"><div class="big">${score >= 0.8 ? "🏆" : "📚"}</div><h2>${ok}/${items.length} — ${Math.round(score * 100)} %</h2>
+      ${Object.keys(missed).length ? `<p class="muted">Fiches à revoir :</p>${Object.values(missed).map(m => `<button class="quiz-opt" data-f="${m.id}">${m.icon} ${esc(m.title)}</button>`).join("")}` : `<p class="muted">Aucune erreur, impressionnant !</p>`}
+      <div class="row" style="justify-content:center;margin-top:10px"><button class="btn" id="gMixAgain">Nouvelle série</button></div></div>`;
+    $$("[data-f]", v).forEach(b => b.addEventListener("click", () => openFiche(b.dataset.f)));
+    $("#gMixAgain").addEventListener("click", () => { view.tab = "mix"; render(); });
+    RT.updateStreak(); return;
+  }
   const S = gstate(); const prev = S.gram[f.id];
   S.gram[f.id] = { best: Math.max(score, prev ? prev.best : 0), last: TODAY() }; save(); RT.updateStreak();
   const pass = score >= 0.8;
